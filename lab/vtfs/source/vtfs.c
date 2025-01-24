@@ -107,12 +107,13 @@ int vtfs_unlink(
   list_for_each((position), &entries){
     current_entry = (struct vtfs_entry*) position;
     if(current_entry->vtfs_inode_ino == child_dentry->d_inode->i_ino){
-      printk(KERN_INFO "Файл %s удалён\n", child_dentry->d_name.name);
+      printk(KERN_INFO "vtfs_unlink: Файл %s удалён\n", child_dentry->d_name.name);
       list_del(position);
       kfree(position);
+      return 0;
     }
   }
-  printk(KERN_ERR "Файл %s не найден\n", child_dentry->d_name.name);
+  printk(KERN_ERR "vtfs_unlink: Файл %s не найден\n", child_dentry->d_name.name);
   return -ENOENT;
 }
 
