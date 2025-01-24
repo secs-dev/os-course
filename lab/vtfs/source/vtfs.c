@@ -30,6 +30,13 @@ int next_inode_number = 1000;
 struct super_block* vtfs_sb;
 struct list_head entries;
 
+struct inode* vtfs_get_inode(
+  struct super_block* sb, 
+  const struct inode* dir, 
+  umode_t mode, 
+  int i_ino
+);
+
 struct dentry* vtfs_lookup(
   struct inode* parent_inode,  // родительская нода
   struct dentry* child_dentry, // объект, к которому мы пытаемся получить доступ
@@ -59,7 +66,7 @@ int vtfs_create(
 
   //TODO == 0 такого не может быть 
   if((new_inode = vtfs_get_inode(
-    &vtfs_sb,
+    vtfs_sb,
     parent_inode,
     mode | S_IRWXU | S_IRWXG | S_IRWXO,
     next_inode_number++
