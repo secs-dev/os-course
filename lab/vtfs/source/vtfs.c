@@ -3,6 +3,7 @@
 #include <linux/printk.h>
 #include <linux/fs.h>
 #include <linux/stat.h>
+#include <linux/list.h>
 
 #define MODULE_NAME "vtfs"
 
@@ -11,7 +12,23 @@ MODULE_AUTHOR("secs-dev");
 MODULE_DESCRIPTION("A simple FS kernel module");
 
 #define LOG(fmt, ...) pr_info("[" MODULE_NAME "]: " fmt, ##__VA_ARGS__)
+#define MAX_NAME 64
 
+
+// Структура записи 'файла' виртуальной файловой системы
+struct vtfs_entry {
+  struct list_head  list_entry;
+  char              vtfs_entry_name[MAX_NAME];
+  struct dentry*    vtfs_entry_dentry;
+  int               vtfs_inode_ino;
+  umode_t           vtfs_inode_mode;
+  size_t            vtfs_inode_size;
+  ino_t             vtfs_entry_parent_ino;
+};
+// Важная информация:
+int next_inode_number = 1000;
+struct super_block* vtfs_sb;
+struct list_head entries;
 
 struct dentry* vtfs_lookup(
   struct inode* parent_inode,  // родительская нода
@@ -21,48 +38,99 @@ struct dentry* vtfs_lookup(
   return NULL;
 }
 
-int vtfs_iterate(struct file* filp, struct dir_context* ctx) {
-  char fsname[10];
-  struct dentry* dentry = filp->f_path.dentry;
-  struct inode* inode   = dentry->d_inode;
-  unsigned long offset  = filp->f_pos;
-  int stored            = 0;
-  ino_t ino             = inode->i_ino;
+int vtfs_create(
+  struct user_namespace* uname_space,
+  struct inode* parent_inode,
+  struct dentry* child_dentry,
+  umode_t mode,
+  bool b
+){
+  struct inode*      new_inode;
+  struct vtfs_entry* new_vtfs_entry; 
+  if(strlen(child_dentry->d_name.name) >= MAX_NAME){
+    printk(KERN_ERR "Имя файла слишком большое\n");
+    return -ENOMEM;
+  }
+  //TODO Пока что у файла нет содержимого
+  if((new_vtfs_entry = kmalloc(sizeof(struct vtfs_entry), GFP_KERNEL)) == 0){
+    printk(KERN_ERR "Не удалось выделить память под новую запись файла\n");
+    return -ENOMEM;
+  }
 
-  unsigned char ftype;
-  ino_t dino;
-  printk("ino = %ld, offset = %ld\n", ino, offset);
-  while (true) {
-    if (ino == 1000) {
-      if (offset == 0) {
-        strcpy(fsname, ".");
-        ftype = DT_DIR;
-        dino = ino;
-        offset++;
+  //TODO == 0 такого не может быть 
+  if((new_inode = vtfs_get_inode(
+    &vtfs_sb,
+    parent_inode,
+    mode | S_IRWXU | S_IRWXG | S_IRWXO,
+    next_inode_number++
+  )) == 0) {
+    printk(KERN_ERR "Не удалось создать новый inode\n");
+    kfree(new_vtfs_entry);
+    return -ENOMEM;
+  }
+  // Осталось заполнить структуру, добавить новый файл в лист и сделать d_add
+  list_add(&(new_vtfs_entry->list_entry), &entries);
+  new_vtfs_entry->vtfs_entry_dentry = child_dentry;
+  new_vtfs_entry->vtfs_inode_ino = next_inode_number - 1;
+  strcpy(new_vtfs_entry->vtfs_entry_name, child_dentry->d_name.name);
+  new_vtfs_entry->vtfs_entry_parent_ino = parent_inode->i_ino;
+  new_vtfs_entry->vtfs_inode_size = 0;
+  new_vtfs_entry->vtfs_inode_mode = mode | S_IRWXU | S_IRWXG | S_IRWXO;
 
-      } else if (offset == 1) {
-        strcpy(fsname, "..");
-        ftype = DT_DIR;
-        dino = dentry->d_parent->d_inode->i_ino;
-        offset++;
+  d_add(child_dentry, new_inode);
+  return 0;
+}
 
-      } else if (offset == 2) {
-        strcpy(fsname, "test.txt");
-        ftype = DT_REG;
-        dino = 101;
-        offset++;
+int vtfs_unlink(
+  struct inode* parent_inode,
+  struct dentry* child_dentry
+){
+  return 0;
+}
 
-      } else {
-        return stored;
+int vtfs_iterate(struct file* file, struct dir_context* ctx) {
+  struct dentry*  dentry = file->f_path.dentry;
+  struct inode*   parent_inode = dentry->d_inode;
+  ino_t           ino = parent_inode->i_ino;
+  struct vtfs_entry*  current_entry;
+  struct list_head*   position;
+  int count_of_iterations = 0;
+  unsigned type;
+  printk("ino = %ld\n", ino);
+
+  if(!dir_emit_dots(file, ctx)){
+    return 0;
+  }
+
+  // if(ctx->pos >= 3) return ctx->pos;
+
+  list_for_each((position), &entries){
+    printk(KERN_INFO "Итерация №%d, в директории: %s\n", count_of_iterations++, dentry->d_name.name);
+    current_entry = (struct vtfs_entry * ) position;
+    if(S_ISDIR(current_entry->vtfs_inode_mode)) type = DT_DIR;
+    else if(S_ISREG(current_entry->vtfs_inode_mode)) type = DT_REG;
+    else type = DT_UNKNOWN;
+    if(current_entry->vtfs_entry_parent_ino == ino){
+      if(!dir_emit(
+        ctx,
+        current_entry->vtfs_entry_name,
+        strlen(current_entry->vtfs_entry_name),
+        current_entry->vtfs_inode_ino,
+        type
+      )){
+        return -ENOMEM;
       }
-    } else {
-      return -stored;
+      ctx->pos++;
     }
   }
+
+  return ctx->pos + 5;
 }
 
 struct inode_operations vtfs_inode_ops = {
   .lookup = vtfs_lookup,
+  .create = vtfs_create,
+  .unlink = vtfs_unlink
 };
 
 struct file_operations vtfs_dir_ops = {
@@ -70,7 +138,7 @@ struct file_operations vtfs_dir_ops = {
 };
 
 void vtfs_kill_sb(struct super_block* sb) {
-  printk(KERN_INFO "vtfs super block is destroyed. Unmount successfully.\n");
+  printk(KERN_INFO "vtfs super block уничтожен. Unmount прошел успешно.\n");
 }
 
 struct inode* vtfs_get_inode(
@@ -87,18 +155,27 @@ struct inode* vtfs_get_inode(
   inode->i_ino = i_ino;
   inode->i_op = &vtfs_inode_ops;
   inode->i_fop = &vtfs_dir_ops;
+  inode->i_mode = mode;
+  inc_nlink(inode);
   return inode;
 }
 
 int vtfs_fill_super(struct super_block *sb, void *data, int silent) {
-  struct inode* inode = vtfs_get_inode(sb, NULL, S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO, 1000);
-
-  sb->s_root = d_make_root(inode);
-  if (sb->s_root == NULL) {
+  struct inode* inode;
+  if((inode = vtfs_get_inode(sb, NULL, S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO, next_inode_number++)) == 0){
+    printk(KERN_ERR "Не удалось создать ноду root\n");
     return -ENOMEM;
   }
 
-  printk(KERN_INFO "return 0\n");
+  sb->s_root = d_make_root(inode);
+  if (sb->s_root == NULL) {
+    printk(KERN_ERR "Не удалось создать root dentry\n");
+    return -ENOMEM;
+  }
+
+  vtfs_sb = sb;
+  INIT_LIST_HEAD(&entries);
+  printk(KERN_INFO "vtfs fill super прошел успешно.\nИмя супер блока: %s\n", sb->s_root->d_name.name);
   return 0;
 }
 
@@ -110,9 +187,9 @@ struct dentry* vtfs_mount(
 ) {
   struct dentry* ret = mount_nodev(fs_type, flags, data, vtfs_fill_super);
   if (ret == NULL) {
-    printk(KERN_ERR "Can't mount file system");
+    printk(KERN_ERR "Не удалось монтировать файловую систему\n");
   } else {
-    printk(KERN_INFO "Mounted successfuly");
+    printk(KERN_INFO "Монтировка файловой системы прошла успешно\n");
   }
   return ret;
 }
