@@ -42,6 +42,15 @@ struct dentry* vtfs_lookup(
   struct dentry* child_dentry, // объект, к которому мы пытаемся получить доступ
   unsigned int flag            // неиспользуемое значение
 ){
+  struct vtfs_entry*  current_entry;
+  struct list_head*   position;
+  int count_of_iterations = 0;
+
+  list_for_each((position), &entries){
+    current_entry = (struct vtfs_entry *) position;
+    printk(KERN_INFO "vtfs_lookup: Итерация №%d\n", count_of_iterations++);
+    printk(KERN_INFO "vtfs_lookup: ino = %d\n", current_entry->vtfs_inode_ino);
+  }
   return NULL;
 }
 
@@ -92,7 +101,19 @@ int vtfs_unlink(
   struct inode* parent_inode,
   struct dentry* child_dentry
 ){
-  return 0;
+  struct vtfs_entry*  current_entry;
+  struct list_head*   position;
+
+  list_for_each((position), &entries){
+    current_entry = (struct vtfs_entry*) position;
+    if(current_entry->vtfs_inode_ino == child_dentry->d_inode->i_ino){
+      printk(KERN_INFO "Файл %s удалён\n", child_dentry->d_name.name);
+      list_del(position);
+      kfree(position);
+    }
+  }
+  printk(KERN_ERR "Файл %s не найден\n", child_dentry->d_name.name);
+  return -ENOENT;
 }
 
 int vtfs_iterate(struct file* file, struct dir_context* ctx) {
@@ -103,7 +124,7 @@ int vtfs_iterate(struct file* file, struct dir_context* ctx) {
   struct list_head*   position;
   int count_of_iterations = 0;
   unsigned type;
-  printk("ino = %ld\n", ino);
+  printk("vtfs_iterate: ino = %ld\n", ino);
 
   if(!dir_emit_dots(file, ctx)){
     return 0;
@@ -112,7 +133,7 @@ int vtfs_iterate(struct file* file, struct dir_context* ctx) {
   if(ctx->pos >= 3) return ctx->pos;
 
   list_for_each((position), &entries){
-    printk(KERN_INFO "Итерация №%d, в директории: %s\n", count_of_iterations++, dentry->d_name.name);
+    printk(KERN_INFO "vtfs_iterate: Итерация №%d, в директории: %s\n", count_of_iterations++, dentry->d_name.name);
     current_entry = (struct vtfs_entry * ) position;
     if(S_ISDIR(current_entry->vtfs_inode_mode)) type = DT_DIR;
     else if(S_ISREG(current_entry->vtfs_inode_mode)) type = DT_REG;
@@ -125,6 +146,7 @@ int vtfs_iterate(struct file* file, struct dir_context* ctx) {
         current_entry->vtfs_inode_ino,
         type
       )){
+        //TODO Поставить нормальные выводы ошибок
         return -ENOMEM;
       }
       ctx->pos++;

@@ -10,3 +10,9 @@ all:
 clean:
 	make -C $(KDIR) M=$(PWD) clean
 	rm -rf .cache
+
+load:
+	bash load.sh
+
+unload:
+	bash unload.sh
