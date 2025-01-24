@@ -1,3 +1,4 @@
+
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -39,15 +40,18 @@ int vtfs_iterate(struct file*, struct dir_context*);
 int vtfs_create(struct mnt_idmap*, struct inode*, struct dentry*, umode_t, bool);
 int vtfs_unlink(struct inode*, struct dentry*);
 int vtfs_mkdir(struct mnt_idmap*, struct inode*, struct dentry*, umode_t);
-// int vtfs_rmdir(struct inode*, struct dentry*);
+int vtfs_rmdir(struct inode*, struct dentry*);
 
 struct file_operations vtfs_dir_ops = {
     .iterate_shared = vtfs_iterate,
 };
 
 struct inode_operations vtfs_inode_ops = {
-    .lookup = vtfs_lookup, .create = vtfs_create, .unlink = vtfs_unlink, .mkdir = vtfs_mkdir,
-    //.rmdir = vtfs_rmdir,
+    .lookup = vtfs_lookup,
+    .create = vtfs_create,
+    .unlink = vtfs_unlink,
+    .mkdir = vtfs_mkdir,
+    .rmdir = vtfs_rmdir,
 };
 
 int vtfs_create(
@@ -229,6 +233,51 @@ int vtfs_mkdir(
   d_add(child_dentry, new_file->inode);
 
   LOG("Dir %s created\n", child_dentry->d_name.name);
+  return 0;
+}
+
+int vtfs_rmdir(struct inode* parent_inode, struct dentry* child_dentry) {
+  struct vtfs_dir* parent_dir;
+  struct vtfs_dir* target_dir;
+  struct vtfs_file* target_file;
+  struct inode* target_inode;
+
+  if (!parent_inode || !child_dentry) {
+    LOG("Invalid args\n");
+    return -EINVAL;
+  }
+
+  parent_dir = parent_inode->i_private;
+  target_inode = child_dentry->d_inode;
+
+  if (!parent_dir || !target_inode) {
+    LOG("Invalid parent or inode\n");
+    return -EFAULT;
+  }
+
+  target_dir = target_inode->i_private;
+
+  if (!target_dir || !target_dir->self) {
+    LOG("Dir corrupted\n");
+    return -EFAULT;
+  }
+
+  target_file = target_dir->self;
+
+  if (!list_empty(&target_dir->children)) {
+    LOG("Directory %s is not empty\n", child_dentry->d_name.name);
+    return -ENOTEMPTY;
+  }
+
+  list_del_init(&target_file->list);
+
+  inode_dec_link_count(target_inode);
+  d_drop(child_dentry);
+
+  kfree(target_file->name);
+  kfree(target_file);
+  kfree(target_dir);
+  LOG("Dir %s removed\n", child_dentry->d_name.name);
   return 0;
 }
 
