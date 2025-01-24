@@ -14,7 +14,7 @@ MODULE_DESCRIPTION("A simple FS kernel module");
 #define LOG(fmt, ...) pr_info("[" MODULE_NAME "]: " fmt, ##__VA_ARGS__)
 #define MAX_NAME 64
 #define PAGESIZE 1024
-
+#define PGROUNDDOWN(a) (((a)) & ~(PAGESIZE - 1))
 
 // Структура записи 'файла' виртуальной файловой системы
 struct vtfs_entry {
@@ -182,17 +182,48 @@ ssize_t vtfs_read(
   size_t len,
   loff_t *offset
 ){
-  struct vtfs_entry*  current_entry;
-  struct list_head*   position;
+  struct vtfs_entry*      current_entry;
+  struct list_head*       position;
+  struct vtfs_entry_page* current_page;
+  struct list_head*       current_page_position;
+  int                     current_page_index = 0;
   ino_t               entry_ino = filp->f_inode->i_ino;
   ssize_t bytes_read = 0;
-  
+  int start_pagenumber  = PGROUNDDOWN(*offset);
+  int start_pageindex   = start_pagenumber / PAGESIZE;
+  int end_pagenumber    = PGROUNDDOWN(*offset + len);
   list_for_each((position), &entries){
     // Ищем файл, откуда читаем
     current_entry = (struct vtfs_entry*) position;
     if(current_entry->vtfs_inode_ino == entry_ino){
       printk(KERN_INFO "Считывание из файла %s\n", filp->f_path.dentry->d_name.name);
-
+      if(*offset >= current_entry->vtfs_inode_size) return 0;
+      if(list_empty(&(current_entry->vtfs_entry_data))) return 0;
+      // Рассмотрим случаи
+      if (start_pagenumber == end_pagenumber){
+        list_for_each((current_page_position), &(current_entry->vtfs_entry_data)){
+          current_page = (struct vtfs_entry_page*) current_page_position;
+          if(current_page_index == start_pageindex){
+            //TODO we find needed page
+            bytes_read = (ssize_t) len;
+            if(copy_to_user(
+              buffer,
+              current_page->data + (*offset) % PAGESIZE,
+              bytes_read
+            ) != 0){
+              return 0;
+              // return -EFAULT;
+            }
+            return bytes_read;
+          } else {
+            current_page_index++;
+          }
+        }
+        return 0;
+      } else {
+        //TODO implement
+        return 0;
+      }
       return bytes_read;
     }
   }
@@ -205,6 +236,24 @@ ssize_t vtfs_write(
   size_t len,
   loff_t *offset
 ){
+  struct vtfs_entry*      current_entry;
+  struct list_head*       position;
+  ino_t                   entry_ino = filp->f_inode->i_ino;
+  ssize_t bytes_write = 0;
+  // Для навигации по страницам:
+  struct vtfs_entry_page* current_page;
+  struct list_head*       current_page_position;
+  int                     current_page_index = 0;
+
+  list_for_each((position), &entries){
+    // Ищем файл, куда пишем
+    current_entry = (struct vtfs_entry*) position;
+    if(current_entry->vtfs_inode_ino == entry_ino){
+      // We found a file
+      if(len == 0) return 0;
+      return bytes_write;
+    }
+  }
   return 0;
 }
 
