@@ -41,14 +41,22 @@ struct dentry* vtfs_lookup(
 int vtfs_iterate(struct file* filp, struct dir_context* ctx);
 
 int vtfs_create(
-  struct mnt_idmap * idmap,
-  struct inode *parent_inode, 
-  struct dentry *child_dentry, 
-  umode_t mode, 
-  bool b
+    struct mnt_idmap* idmap,
+    struct inode* parent_inode,
+    struct dentry* child_dentry,
+    umode_t mode,
+    bool b
 );
 
-int vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry);
+int vtfs_unlink(struct inode* parent_inode, struct dentry* child_dentry);
+int vtfs_mkdir(
+    struct mnt_idmap* idmap, struct inode* parent_inode, struct dentry* child_dentry, umode_t mode
+);
+
+int vtfs_rmdir(struct inode*, struct dentry*);
+
+ssize_t vtfs_read(struct file *filp, char __user *buffer, size_t len, loff_t *offset);
+ssize_t vtfs_write(struct file *filp, const char __user *buffer, size_t len, loff_t *offset);
 
 // =========
 // Структуры
@@ -56,12 +64,21 @@ int vtfs_unlink(struct inode *parent_inode, struct dentry *child_dentry);
 struct inode_operations vtfs_inode_ops = {
     .lookup = vtfs_lookup,
     .create = vtfs_create,
-    .unlink = vtfs_unlink
+    .unlink = vtfs_unlink,
+    .mkdir = vtfs_mkdir,
+    .rmdir = vtfs_rmdir,
 };
 
 struct file_operations vtfs_dir_ops = {
     .owner = THIS_MODULE,
     .iterate_shared = vtfs_iterate,
+};
+
+struct file_operations vtfs_file_ops = {
+    .open = simple_open,            // стандартная реализация
+    .llseek = generic_file_llseek,  // -||-
+    .read = vtfs_read,
+    .write = vtfs_write,
 };
 
 // Описание файловой системы
@@ -73,13 +90,18 @@ struct file_system_type vtfs_fs_type = {
 };
 
 struct vtfs_file {
-    char name[256];               // Имя файла
-    struct inode *inode;          // Указатель на inode
-    struct list_head list;        // Связанный список
+  char name[256];         // Имя файла
+  struct inode* inode;    // Указатель на inode
+  struct list_head list;  // Связанный список
 };
 
 // Добавить это поле в inode для хранения списка дочерних файлов
 struct vtfs_inode_info {
-    struct list_head children;    // Список дочерних файлов
-    struct inode vfs_inode;       // Оригинальный inode
+  struct list_head children;  // Список дочерних файлов
+  struct inode vfs_inode;     // Оригинальный inode
+};
+
+struct vtfs_file_content {
+  char* data;   // Указатель на содержимое файла
+  size_t size;  // Размер данных
 };

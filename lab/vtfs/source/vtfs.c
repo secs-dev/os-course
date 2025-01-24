@@ -70,7 +70,6 @@ struct inode* vtfs_get_inode(
   if (S_ISDIR(mode)) {
     struct vtfs_inode_info* info = kmalloc(sizeof(struct vtfs_inode_info), GFP_KERNEL);
     if (!info) {
-      iput(inode);
       return NULL;
     }
     INIT_LIST_HEAD(&info->children);
@@ -87,9 +86,9 @@ struct inode* vtfs_get_inode(
 
 // Функция отмонтирования файловой системы
 void vtfs_kill_sb(struct super_block* sb) {
-  struct inode* inode;
+  // struct inode* inode;
 
-  kill_litter_super(sb);  // Освобождаем суперблок
+  // kill_litter_super(sb);  // Освобождаем суперблок
   printk(KERN_INFO "VTFS: super block destroyed\n");
 }
 
@@ -174,22 +173,37 @@ int vtfs_create(
     bool b
 ) {
   const char* name = child_dentry->d_name.name;
+  printk(KERN_INFO "vtfs_create: name = %s, mode = 0%o\n", name, mode);
 
   // Создаем новый inode
   struct inode* inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, mode, get_next_ino());
   if (!inode) {
     return -ENOMEM;
   }
-  inode->i_mode = S_IFDIR | S_IRWXG | S_IRWXU | S_IRWXO;
+
+  printk(KERN_INFO "Creating a file: %s\n", name);
+  inode->i_mode =
+      S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;  // Устанавливаем тип файла и права доступа
+  inode->i_fop = &vtfs_file_ops;  // Указываем операции для файла
   inode->i_op = &vtfs_inode_ops;
-  inode->i_fop = S_ISDIR(mode) ? &vtfs_dir_ops : NULL;
+
+  // Инициализация структуры для хранения содержимого файла
+  struct vtfs_file_content* content = kmalloc(sizeof(struct vtfs_file_content), GFP_KERNEL);
+  if (!content) {
+    return -ENOMEM;
+  }
+  content->data = NULL;
+  content->size = 0;
+
+  // Связываем содержимое с inode
+  inode->i_private = content;
 
   // Добавляем новый файл в список дочерних файлов родительского каталога
   struct vtfs_inode_info* info = parent_inode->i_private;
   if (info) {
     struct vtfs_file* file = kmalloc(sizeof(struct vtfs_file), GFP_KERNEL);
     if (!file) {
-      iput(inode);
+      kfree(content);
       return -ENOMEM;
     }
     strncpy(file->name, name, 256);
@@ -211,8 +225,14 @@ int vtfs_unlink(struct inode* parent_inode, struct dentry* child_dentry) {
 
   list_for_each_entry_safe(file, tmp, &info->children, list) {
     if (!strcmp(file->name, name)) {
+      // Удаляем содержимое файла, если оно есть
+      if (file->inode && file->inode->i_private) {
+        struct vtfs_file_content* content = file->inode->i_private;
+        kfree(content->data);  // Освобождаем данные
+        kfree(content);        // Освобождаем структуру
+      }
+
       list_del(&file->list);  // Удаляем из списка
-      iput(file->inode);      // Уменьшаем счетчик ссылок inode
       kfree(file);            // Освобождаем структуру
       printk(KERN_INFO "File '%s' deleted successfully\n", name);
       return 0;
@@ -220,4 +240,133 @@ int vtfs_unlink(struct inode* parent_inode, struct dentry* child_dentry) {
   }
 
   return -ENOENT;  // Файл не найден
+}
+
+// =====
+// MKDIR
+// =====
+int vtfs_mkdir(
+    struct mnt_idmap* idmap, struct inode* parent_inode, struct dentry* child_dentry, umode_t mode
+) {
+  const char* name = child_dentry->d_name.name;  // Получаем имя директории
+  printk(KERN_INFO "vtfs_mkdir: name = %s, mode = 0%o\n", name, mode);
+
+  // Создаем новый inode для директории
+  struct inode* inode =
+      vtfs_get_inode(parent_inode->i_sb, parent_inode, mode | S_IFDIR, get_next_ino());
+  if (!inode) {
+    return -ENOMEM;  // Ошибка выделения памяти для inode
+  }
+
+  inode->i_mode = S_IFDIR | mode;  // Устанавливаем флаги типа директории и права доступа
+  inode->i_op = &vtfs_inode_ops;  // Устанавливаем операции для inode
+  inode->i_fop = &vtfs_dir_ops;   // Операции для директории
+
+  // Добавляем новую директорию в список дочерних элементов
+  struct vtfs_inode_info* info = parent_inode->i_private;
+  if (info) {
+    struct vtfs_file* dir = kmalloc(sizeof(struct vtfs_file), GFP_KERNEL);
+    if (!dir) {
+      return -ENOMEM;
+    }
+    strncpy(dir->name, name, 256);
+    dir->inode = inode;
+    list_add(&dir->list, &info->children);
+  }
+
+  // Связываем dentry с inode
+  d_add(child_dentry, inode);
+  printk(KERN_INFO "Directory '%s' created successfully\n", name);
+  return 0;
+}
+
+// ======
+// RMDIR
+// ======
+int vtfs_rmdir(struct inode* parent_inode, struct dentry* child_dentry) {
+  const char* name = child_dentry->d_name.name;  // Получаем имя удаляемой директории
+  struct vtfs_inode_info* info = parent_inode->i_private;
+  struct vtfs_file *dir, *tmp;
+
+  // Проверяем, существует ли директория в списке дочерних элементов
+  list_for_each_entry_safe(dir, tmp, &info->children, list) {
+    if (!strcmp(dir->name, name)) {
+      // Проверяем, пуста ли директория
+      struct vtfs_inode_info* dir_info = dir->inode->i_private;
+      if (!list_empty(&dir_info->children)) {
+        printk(KERN_ERR "Directory '%s' is not empty\n", name);
+        return -ENOTEMPTY;
+      }
+
+      // Удаляем директорию из списка
+      list_del(&dir->list);
+      kfree(dir);  // Освобождаем память
+      printk(KERN_INFO "Directory '%s' deleted successfully\n", name);
+      return 0;
+    }
+  }
+
+  printk(KERN_ERR "Directory '%s' not found\n", name);
+  return -ENOENT;  // Директория не найдена
+}
+
+// =========================
+// Реализация функции чтения
+// =========================
+ssize_t vtfs_read(struct file* filp, char __user* buffer, size_t len, loff_t* offset) {
+  printk(KERN_INFO "vtfs_read: called with len=%zu, offset=%lld\n", len, *offset);
+  struct vtfs_file_content* content = filp->private_data;
+
+  if (!content || *offset > content->size) {
+    printk(KERN_ERR "vtfs_read: offset too much for file size\n");
+    return 0;  // Конец файла или нет данных
+  }
+
+  size_t available = content->size - *offset;
+  printk(KERN_ERR "vtfs_read: available founded\n");
+  size_t to_read = min(len, available);
+  printk(KERN_ERR "vtfs_read: min founded\n");
+
+  if (copy_to_user(buffer, content->data + *offset, to_read)) {
+    printk(KERN_ERR "vtfs_read: copy_to_user failed\n");
+    return -EFAULT;
+  }
+
+  *offset += to_read;
+  printk(KERN_INFO "vtfs_read: read %zu bytes, new offset=%lld\n", to_read, *offset);
+  return to_read;
+}
+
+ssize_t vtfs_write(struct file* filp, const char __user* buffer, size_t len, loff_t* offset) {
+  printk(KERN_INFO "vtfs_write: called with len=%zu, offset=%lld\n", len, *offset);
+  struct vtfs_file_content* content = filp->private_data;
+
+  if (!content) {
+    content = kmalloc(sizeof(struct vtfs_file_content), GFP_KERNEL);
+    if (!content) {
+      return -ENOMEM;  // Ошибка выделения памяти
+    }
+    content->data = NULL;
+    content->size = 0;
+    filp->private_data = content;
+    printk(KERN_INFO "vtfs_write: private_data initialized\n");
+  }
+
+  // Расширяем буфер, если необходимо
+  if (*offset + len > content->size) {
+    char* new_data = krealloc(content->data, *offset + len, GFP_KERNEL);
+    if (!new_data) {
+      return -ENOMEM;  // Ошибка выделения памяти
+    }
+    content->data = new_data;
+    content->size = *offset + len;
+  }
+
+  if (copy_from_user(content->data + *offset, buffer, len)) {
+    return -EFAULT;  // Ошибка копирования из user-space
+  }
+
+  *offset += len;
+  printk(KERN_INFO "vtfs_write: wrote %zu bytes, new size=%zu\n", len, content->size);
+  return len;
 }
