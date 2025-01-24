@@ -141,6 +141,29 @@ int vtfs_rmdir(
   struct inode*   parent_inode,
   struct dentry*  child_dentry
 ){
+  struct vtfs_entry*  current_entry;
+  struct list_head*   position;
+  struct vtfs_entry*  dir_position = 0;
+  ino_t dir_ino = child_dentry->d_inode->i_ino;
+
+  list_for_each((position), &entries){
+    current_entry = (struct vtfs_entry*) position;
+    if(current_entry->vtfs_entry_parent_ino == dir_ino){
+      printk(KERN_ERR "vtfs_rmdir: директория %s не пуста\n", child_dentry->d_name.name);
+      // TODO Код ошибки должен говорить, что директория не пуста
+      return -EISDIR;
+    }
+    if(current_entry->vtfs_inode_ino == dir_ino){
+      dir_position = current_entry;
+    }
+  }
+  if(dir_position == 0){
+    printk(KERN_ERR "vtfs_rmdir: директория %s не найдена\n", child_dentry->d_name.name);
+    return -ENOENT;
+  }
+  list_del((struct list_head*) dir_position);
+  kfree(dir_position);
+  printk(KERN_ERR "vtfs_rmdir: директория %s удалена\n", child_dentry->d_name.name);
   return 0;
 }
 
