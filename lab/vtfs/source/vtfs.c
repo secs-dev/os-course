@@ -15,16 +15,63 @@ MODULE_DESCRIPTION("A simple FS kernel module");
 
 #define LOG(fmt, ...) pr_info("[" MODULE_NAME "]: " fmt, ##__VA_ARGS__)
 
+static int mask = 0;
+
 void vtfs_kill_sb(struct super_block*);
 struct dentry* vtfs_mount(struct file_system_type*, int, const char*, void*);
 int vtfs_fill_super(struct super_block*, void*, int);
 struct inode* vtfs_get_inode(struct super_block*, const struct inode*, umode_t, int);
 struct dentry* vtfs_lookup(struct inode*, struct dentry*, unsigned int);
 int vtfs_iterate(struct file*, struct dir_context*);
+int vtfs_create(struct mnt_idmap*, struct inode*, struct dentry*, umode_t, bool);
+int vtfs_unlink(struct inode*, struct dentry*);
 
 struct file_operations vtfs_dir_ops = {
     .iterate_shared = vtfs_iterate,
 };
+
+struct inode_operations vtfs_inode_ops = {
+    .lookup = vtfs_lookup,
+    .create = vtfs_create,
+};
+
+int vtfs_create(
+    struct mnt_idmap* idmap,
+    struct inode* parent_inode,
+    struct dentry* child_dentry,
+    umode_t mode,
+    bool b
+) {
+  ino_t root = parent_inode->i_ino;
+  const char* name = child_dentry->d_name.name;
+  if (root == 100 && !strcmp(name, "test.txt")) {
+    struct inode* inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFREG | 0777, 101);
+    inode->i_op = &vtfs_inode_ops;
+    inode->i_fop = NULL;
+
+    d_add(child_dentry, inode);
+    mask |= 1;
+  } else if (root == 100 && !strcmp(name, "new_file.txt")) {
+    struct inode* inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFREG | 07777, 102);
+    inode->i_op = &vtfs_inode_ops;
+    inode->i_fop = NULL;
+
+    d_add(child_dentry, inode);
+    mask |= 2;
+  }
+  return 0;
+}
+
+int vtfs_unlink(struct inode* parent_inode, struct dentry* child_dentry) {
+  const char* name = child_dentry->d_name.name;
+  ino_t root = parent_inode->i_ino;
+  if (root == 100 && !strcmp(name, "test.txt")) {
+    mask &= ~1;
+  } else if (root == 100 && !strcmp(name, "new_file.txt")) {
+    mask &= ~2;
+  }
+  return 0;
+}
 
 int vtfs_iterate(struct file* flip, struct dir_context* ctx) {
   struct dentry* dentry = flip->f_path.dentry;
@@ -66,10 +113,6 @@ int vtfs_iterate(struct file* flip, struct dir_context* ctx) {
   return 0;
 }
 
-struct inode_operations vtfs_inode_ops = {
-    .lookup = vtfs_lookup,
-};
-
 struct dentry* vtfs_lookup(
     struct inode* parent_inode, struct dentry* child_dentry, unsigned int flag
 ) {
@@ -78,14 +121,12 @@ struct dentry* vtfs_lookup(
   if (root == 100 && !strcmp(name, "test.txt")) {
     struct inode* inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFREG, 101);
     d_add(child_dentry, inode);
-    // this here is useless for now
   } else if (root == 100 && !strcmp(name, "dir")) {
     struct inode* inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFDIR, 200);
     d_add(child_dentry, inode);
   }
   return NULL;
 }
-
 struct inode* vtfs_get_inode(
     struct super_block* sb, const struct inode* dir, umode_t mode, int i_ino
 ) {
