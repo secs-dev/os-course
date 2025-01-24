@@ -91,21 +91,43 @@ int vtfs_create(
 }
 
 int vtfs_unlink(struct inode* parent_inode, struct dentry* child_dentry) {
-  struct vtfs_dir* parent_dir = parent_inode->i_private;
-  const char* name = child_dentry->d_name.name;
+  struct vtfs_dir* parent_dir;
+  struct vtfs_file* file_entry;
+  const char* name;
 
-  struct list_head *pos, *tmp;
-  list_for_each_safe(pos, tmp, &parent_dir->children) {
-    struct vtfs_file* entry = list_entry(pos, struct vtfs_file, list);
-    if (strcmp(entry->name, name) == 0) {
-      list_del(&entry->list);
-      d_delete(child_dentry);
-      kfree(entry->name);
-      kfree(entry->data);
-      kfree(entry);
+  LOG("Entering vtfs_unlink\n");
+
+  if (!parent_inode || !child_dentry) {
+    LOG("Invalid args");
+    return -EINVAL;
+  }
+
+  parent_dir = parent_inode->i_private;
+  if (!parent_dir) {
+    LOG("Parent inode private data is NULL\n");
+    return -EFAULT;
+  }
+
+  name = child_dentry->d_name.name;
+  LOG("Attempting to unlink file: %s\n", name);
+
+  list_for_each_entry(file_entry, &parent_dir->children, list) {
+    if (strcmp(file_entry->name, name) == 0) {
+      list_del(&file_entry->list);
+      LOG("File %s removed from list\n", name);
+      kfree(file_entry->name);
+      kfree(file_entry->data);
+      kfree(file_entry);
+
+      inode_dec_link_count(child_dentry->d_inode);
+      d_drop(child_dentry);
+
+      LOG("File %s unlinked\n", name);
       return 0;
     }
   }
+
+  LOG("File %s not found\n", name);
   return -ENOENT;
 }
 
