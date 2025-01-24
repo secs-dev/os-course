@@ -73,8 +73,19 @@ struct inode_operations vtfs_inode_ops = {
 struct dentry* vtfs_lookup(
     struct inode* parent_inode, struct dentry* child_dentry, unsigned int flag
 ) {
+  ino_t root = parent_inode->i_ino;
+  const char* name = child_dentry->d_name.name;
+  if (root == 100 && !strcmp(name, "test.txt")) {
+    struct inode* inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFREG, 101);
+    d_add(child_dentry, inode);
+    // this here is useless for now
+  } else if (root == 100 && !strcmp(name, "dir")) {
+    struct inode* inode = vtfs_get_inode(parent_inode->i_sb, NULL, S_IFDIR, 200);
+    d_add(child_dentry, inode);
+  }
   return NULL;
 }
+
 struct inode* vtfs_get_inode(
     struct super_block* sb, const struct inode* dir, umode_t mode, int i_ino
 ) {
