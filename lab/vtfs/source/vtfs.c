@@ -13,6 +13,7 @@ MODULE_DESCRIPTION("A simple FS kernel module");
 
 #define LOG(fmt, ...) pr_info("[" MODULE_NAME "]: " fmt, ##__VA_ARGS__)
 #define MAX_NAME 64
+#define PAGESIZE 1024
 
 
 // Структура записи 'файла' виртуальной файловой системы
@@ -24,7 +25,14 @@ struct vtfs_entry {
   umode_t           vtfs_inode_mode;
   size_t            vtfs_inode_size;
   ino_t             vtfs_entry_parent_ino;
+  struct list_head  vtfs_entry_data;
 };
+
+struct vtfs_entry_page{
+  struct list_head  list_data;
+  char              data[PAGESIZE];
+};
+
 // Важная информация:
 int next_inode_number = 1000;
 struct super_block* vtfs_sb;
@@ -92,6 +100,7 @@ int vtfs_create(
   new_vtfs_entry->vtfs_entry_parent_ino = parent_inode->i_ino;
   new_vtfs_entry->vtfs_inode_size = 0;
   new_vtfs_entry->vtfs_inode_mode = mode | S_IRWXU | S_IRWXG | S_IRWXO;
+  INIT_LIST_HEAD(&(new_vtfs_entry->vtfs_entry_data));
 
   d_add(child_dentry, new_inode);
   return 0;
@@ -167,6 +176,38 @@ int vtfs_rmdir(
   return 0;
 }
 
+ssize_t vtfs_read(
+  struct file* filp,
+  char* buffer,
+  size_t len,
+  loff_t *offset
+){
+  struct vtfs_entry*  current_entry;
+  struct list_head*   position;
+  ino_t               entry_ino = filp->f_inode->i_ino;
+  ssize_t bytes_read = 0;
+  
+  list_for_each((position), &entries){
+    // Ищем файл, откуда читаем
+    current_entry = (struct vtfs_entry*) position;
+    if(current_entry->vtfs_inode_ino == entry_ino){
+      printk(KERN_INFO "Считывание из файла %s\n", filp->f_path.dentry->d_name.name);
+
+      return bytes_read;
+    }
+  }
+  return -ENOENT;
+}
+
+ssize_t vtfs_write(
+  struct file* filp,
+  const char* buffer,
+  size_t len,
+  loff_t *offset
+){
+  return 0;
+}
+
 int vtfs_iterate(struct file* file, struct dir_context* ctx) {
   struct dentry*  dentry = file->f_path.dentry;
   struct inode*   parent_inode = dentry->d_inode;
@@ -216,7 +257,9 @@ struct inode_operations vtfs_inode_ops = {
 };
 
 struct file_operations vtfs_dir_ops = {
-  .iterate = vtfs_iterate,
+  .iterate  = vtfs_iterate,
+  .read     = vtfs_read,
+  .write    = vtfs_write
 };
 
 void vtfs_kill_sb(struct super_block* sb) {
