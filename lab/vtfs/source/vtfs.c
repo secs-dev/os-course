@@ -38,15 +38,16 @@ struct dentry* vtfs_lookup(struct inode*, struct dentry*, unsigned int);
 int vtfs_iterate(struct file*, struct dir_context*);
 int vtfs_create(struct mnt_idmap*, struct inode*, struct dentry*, umode_t, bool);
 int vtfs_unlink(struct inode*, struct dentry*);
+int vtfs_mkdir(struct mnt_idmap*, struct inode*, struct dentry*, umode_t);
+// int vtfs_rmdir(struct inode*, struct dentry*);
 
 struct file_operations vtfs_dir_ops = {
     .iterate_shared = vtfs_iterate,
 };
 
 struct inode_operations vtfs_inode_ops = {
-    .lookup = vtfs_lookup,
-    .create = vtfs_create,
-    .unlink = vtfs_unlink,
+    .lookup = vtfs_lookup, .create = vtfs_create, .unlink = vtfs_unlink, .mkdir = vtfs_mkdir,
+    //.rmdir = vtfs_rmdir,
 };
 
 int vtfs_create(
@@ -173,6 +174,64 @@ struct dentry* vtfs_lookup(
 
   return NULL;
 }
+
+int vtfs_mkdir(
+    struct mnt_idmap* idmap, struct inode* parent_inode, struct dentry* child_dentry, umode_t mode
+) {
+  struct vtfs_dir* parent_dir;
+  struct vtfs_dir* new_dir;
+  struct vtfs_file* new_file;
+
+  if (!parent_inode || !child_dentry) {
+    LOG("Invalid args\n");
+    return -EINVAL;
+  }
+
+  parent_dir = parent_inode->i_private;
+  if (!parent_dir) {
+    LOG("Parent dir is NULL\n");
+    return -EFAULT;
+  }
+
+  new_file = kzalloc(sizeof(*new_file), GFP_KERNEL);
+  if (!new_file) {
+    LOG("kzalloc failed file\n");
+    return -ENOMEM;
+  }
+
+  new_file->name = kstrdup(child_dentry->d_name.name, GFP_KERNEL);
+  if (!new_file->name) {
+    kfree(new_file);
+    return -ENOMEM;
+  }
+
+  new_dir = kzalloc(sizeof(*new_dir), GFP_KERNEL);
+  if (!new_dir) {
+    LOG("kzalloc failed dir\n");
+    kfree(new_file->name);
+    kfree(new_file);
+    return -ENOMEM;
+  }
+
+  INIT_LIST_HEAD(&new_dir->children);
+  new_dir->self = new_file;
+
+  new_file->ino = get_next_ino();
+  new_file->mode = S_IFDIR | mode;
+  new_file->size = 0;
+  new_file->data = NULL;
+  new_file->inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, new_file->mode, new_file->ino);
+  new_file->inode->i_private = new_dir;
+  new_file->inode->i_op = &vtfs_inode_ops;
+  new_file->inode->i_fop = &vtfs_dir_ops;
+  list_add_tail(&new_file->list, &parent_dir->children);
+
+  d_add(child_dentry, new_file->inode);
+
+  LOG("Dir %s created\n", child_dentry->d_name.name);
+  return 0;
+}
+
 struct inode* vtfs_get_inode(
     struct super_block* sb, const struct inode* dir, umode_t mode, int i_ino
 ) {
