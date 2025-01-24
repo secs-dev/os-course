@@ -24,16 +24,10 @@ struct inode* vtfs_get_inode(
     struct super_block* sb, const struct inode* dir, umode_t mode, int i_ino
 ) {
   struct inode* inode = new_inode(sb);
+  struct mnt_idmap* idmap = &nop_mnt_idmap;
   if (inode != NULL) {
-    // in linux kernel v6.8.0, inode_init_owner() call takes struct mnt_idmap* as first argument
-    // instead of usual user_namespace*, and i do not have any way to access this structure this
-    // here is a basic replacement of inode_init_owner() call
-    inode->i_mode = mode;
-    i_uid_write(inode, 0);
-    i_gid_write(inode, 0);
-    inode->__i_atime = inode->__i_mtime = inode->__i_ctime = current_time(inode);
+    inode_init_owner(idmap, inode, dir, mode);
   }
-
   inode->i_ino = i_ino;
   return inode;
 }
