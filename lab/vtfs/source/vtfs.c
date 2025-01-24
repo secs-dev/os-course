@@ -36,7 +36,7 @@ struct inode* vtfs_get_inode(
   umode_t mode, 
   int i_ino
 );
-
+//TODO Зачем этот вызов необходим
 struct dentry* vtfs_lookup(
   struct inode* parent_inode,  // родительская нода
   struct dentry* child_dentry, // объект, к которому мы пытаемся получить доступ
@@ -117,6 +117,33 @@ int vtfs_unlink(
   return -ENOENT;
 }
 
+int vtfs_mkdir(
+  struct user_namespace*  uname_space,
+  struct inode*           parent_inode,
+  struct dentry*          child_dentry,
+  umode_t mode
+){
+  if(vtfs_create(
+    uname_space,
+    parent_inode,
+    child_dentry,
+    mode | S_IFDIR,
+    0
+  ) != 0){
+    printk("Не удалось создать директорию %s\n", child_dentry->d_name.name);
+    return -ENOMEM;
+  }
+  printk("Директория %s создана\n", child_dentry->d_name.name);
+  return 0;
+}
+
+int vtfs_rmdir(
+  struct inode*   parent_inode,
+  struct dentry*  child_dentry
+){
+  return 0;
+}
+
 int vtfs_iterate(struct file* file, struct dir_context* ctx) {
   struct dentry*  dentry = file->f_path.dentry;
   struct inode*   parent_inode = dentry->d_inode;
@@ -160,7 +187,9 @@ int vtfs_iterate(struct file* file, struct dir_context* ctx) {
 struct inode_operations vtfs_inode_ops = {
   .lookup = vtfs_lookup,
   .create = vtfs_create,
-  .unlink = vtfs_unlink
+  .unlink = vtfs_unlink,
+  .mkdir  = vtfs_mkdir,
+  .rmdir  = vtfs_rmdir
 };
 
 struct file_operations vtfs_dir_ops = {
