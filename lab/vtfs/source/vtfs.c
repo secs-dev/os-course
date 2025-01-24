@@ -109,7 +109,7 @@ int vtfs_iterate(struct file* file, struct dir_context* ctx) {
     return 0;
   }
 
-  // if(ctx->pos >= 3) return ctx->pos;
+  if(ctx->pos >= 3) return ctx->pos;
 
   list_for_each((position), &entries){
     printk(KERN_INFO "Итерация №%d, в директории: %s\n", count_of_iterations++, dentry->d_name.name);
@@ -130,8 +130,8 @@ int vtfs_iterate(struct file* file, struct dir_context* ctx) {
       ctx->pos++;
     }
   }
-
-  return ctx->pos + 5;
+  //TODO итого 4
+  return ctx->pos;
 }
 
 struct inode_operations vtfs_inode_ops = {
