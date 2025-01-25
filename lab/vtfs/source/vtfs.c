@@ -66,7 +66,6 @@ struct inode* vtfs_get_inode(
   inode_init_owner(&nop_mnt_idmap, inode, dir, mode);
   inode->i_ino = i_ino;
 
-  // Если это каталог, инициализируем список
   if (S_ISDIR(mode)) {
     struct vtfs_inode_info* info = kmalloc(sizeof(struct vtfs_inode_info), GFP_KERNEL);
     if (!info) {
@@ -75,11 +74,11 @@ struct inode* vtfs_get_inode(
     INIT_LIST_HEAD(&info->children);
     inode->i_private = info;
   } else {
-    inode->i_private = NULL;  // Для файлов
+    inode->i_private = NULL;
   }
 
-  inode->i_op = &vtfs_inode_ops;  // Обязательно указываем операции
-  inode->i_fop = S_ISDIR(mode) ? &vtfs_dir_ops : NULL;
+  inode->i_op = &vtfs_inode_ops;
+  inode->i_fop = S_ISDIR(mode) ? &vtfs_dir_ops : &vtfs_file_ops;
 
   return inode;
 }
@@ -175,30 +174,22 @@ int vtfs_create(
   const char* name = child_dentry->d_name.name;
   printk(KERN_INFO "vtfs_create: name = %s, mode = 0%o\n", name, mode);
 
-  // Создаем новый inode
-  struct inode* inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, mode, get_next_ino());
+  struct inode* inode =
+      vtfs_get_inode(parent_inode->i_sb, parent_inode, mode | S_IFREG, get_next_ino());
   if (!inode) {
     return -ENOMEM;
   }
 
-  printk(KERN_INFO "Creating a file: %s\n", name);
-  inode->i_mode =
-      S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;  // Устанавливаем тип файла и права доступа
-  inode->i_fop = &vtfs_file_ops;  // Указываем операции для файла
-  inode->i_op = &vtfs_inode_ops;
-
-  // Инициализация структуры для хранения содержимого файла
+  // Привязываем содержимое файла
   struct vtfs_file_content* content = kmalloc(sizeof(struct vtfs_file_content), GFP_KERNEL);
   if (!content) {
     return -ENOMEM;
   }
   content->data = NULL;
   content->size = 0;
-
-  // Связываем содержимое с inode
   inode->i_private = content;
 
-  // Добавляем новый файл в список дочерних файлов родительского каталога
+  // Добавляем файл в список
   struct vtfs_inode_info* info = parent_inode->i_private;
   if (info) {
     struct vtfs_file* file = kmalloc(sizeof(struct vtfs_file), GFP_KERNEL);
@@ -211,10 +202,8 @@ int vtfs_create(
     list_add(&file->list, &info->children);
   }
 
-  // Связываем dentry с inode
   d_add(child_dentry, inode);
-
-  printk(KERN_INFO "File '%s' was created successfully\n", name);
+  printk(KERN_INFO "File '%s' created successfully\n", name);
   return 0;
 }
 
@@ -248,21 +237,15 @@ int vtfs_unlink(struct inode* parent_inode, struct dentry* child_dentry) {
 int vtfs_mkdir(
     struct mnt_idmap* idmap, struct inode* parent_inode, struct dentry* child_dentry, umode_t mode
 ) {
-  const char* name = child_dentry->d_name.name;  // Получаем имя директории
+  const char* name = child_dentry->d_name.name;
   printk(KERN_INFO "vtfs_mkdir: name = %s, mode = 0%o\n", name, mode);
 
-  // Создаем новый inode для директории
   struct inode* inode =
       vtfs_get_inode(parent_inode->i_sb, parent_inode, mode | S_IFDIR, get_next_ino());
   if (!inode) {
-    return -ENOMEM;  // Ошибка выделения памяти для inode
+    return -ENOMEM;
   }
 
-  inode->i_mode = S_IFDIR | mode;  // Устанавливаем флаги типа директории и права доступа
-  inode->i_op = &vtfs_inode_ops;  // Устанавливаем операции для inode
-  inode->i_fop = &vtfs_dir_ops;   // Операции для директории
-
-  // Добавляем новую директорию в список дочерних элементов
   struct vtfs_inode_info* info = parent_inode->i_private;
   if (info) {
     struct vtfs_file* dir = kmalloc(sizeof(struct vtfs_file), GFP_KERNEL);
@@ -274,7 +257,6 @@ int vtfs_mkdir(
     list_add(&dir->list, &info->children);
   }
 
-  // Связываем dentry с inode
   d_add(child_dentry, inode);
   printk(KERN_INFO "Directory '%s' created successfully\n", name);
   return 0;
