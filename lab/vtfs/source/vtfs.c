@@ -108,6 +108,19 @@ int vtfs_create(
   return 0;
 }
 
+void inc_nlink_all(ino_t ino, int count){
+  struct vtfs_entry*  current_entry;
+  struct list_head*   position;
+  
+  list_for_each((position), &entries){
+    current_entry = (struct vtfs_entry * ) position;
+    if (current_entry->vtfs_inode_ino == ino){
+      set_nlink(current_entry->vtfs_entry_dentry->d_inode, count);
+      
+    }
+  }
+}
+
 int vtfs_unlink(
   struct inode* parent_inode,
   struct dentry* child_dentry
@@ -117,15 +130,22 @@ int vtfs_unlink(
 
   list_for_each((position), &entries){
     current_entry = (struct vtfs_entry*) position;
-    if(current_entry->vtfs_inode_ino == child_dentry->d_inode->i_ino){
+    if(current_entry->vtfs_inode_ino == child_dentry->d_inode->i_ino 
+        && !strcmp(child_dentry->d_name.name, current_entry->vtfs_entry_name)
+      ){
       printk(KERN_INFO "vtfs_unlink: Файл %s удалён\n", child_dentry->d_name.name);
       list_del(position);
-      kfree(position);
+      if(current_entry->vtfs_entry_dentry->d_inode->i_nlink != 2){
+        inc_nlink_all(current_entry->vtfs_inode_ino, current_entry->vtfs_entry_dentry->d_inode->i_nlink - 1);
+        kfree(position);
+        return 0;
+      }
       while(!list_empty(&(current_entry->vtfs_entry_data))){
         struct list_head* to_delete_page = current_entry->vtfs_entry_data.next;
         list_del(to_delete_page);
         kfree(to_delete_page);
       }
+      kfree(position);
       return 0;
     }
   }
@@ -321,6 +341,44 @@ ssize_t vtfs_write(
   return len;
 }
 
+
+
+int vtfs_link(
+  struct dentry* old_dentry,
+  struct inode* parent_dir,
+  struct dentry* new_dentry
+){
+  if(!S_ISREG(old_dentry->d_inode->i_mode)) return -EPERM;
+  struct vtfs_entry*  current_entry;
+  struct vtfs_entry*  new_vtfs_entry;
+  struct list_head*   position;
+  
+  list_for_each((position), &entries){
+    current_entry = (struct vtfs_entry * ) position;
+    if(current_entry->vtfs_inode_ino == old_dentry->d_inode->i_ino){
+      if((new_vtfs_entry = kmalloc(sizeof(struct vtfs_entry), GFP_KERNEL)) == 0){
+        printk(KERN_ERR "Не удалось выделить память под новую запись файла\n");
+        return -ENOMEM;
+      }
+      list_add(&(new_vtfs_entry->list_entry), &entries);
+      new_vtfs_entry->vtfs_entry_dentry = new_dentry;
+      new_vtfs_entry->vtfs_inode_ino = old_dentry->d_inode->i_ino;
+      strcpy(new_vtfs_entry->vtfs_entry_name, new_dentry->d_name.name);
+      new_vtfs_entry->vtfs_entry_parent_ino = parent_dir->i_ino;
+      new_vtfs_entry->vtfs_inode_size = current_entry->vtfs_inode_size;
+      new_vtfs_entry->vtfs_entry_count_of_pages = current_entry->vtfs_entry_count_of_pages;
+      new_vtfs_entry->vtfs_inode_mode = current_entry->vtfs_inode_mode;
+      new_vtfs_entry->vtfs_entry_data = current_entry->vtfs_entry_data;
+      struct inode* new_inode = vtfs_get_inode(parent_dir->i_sb, parent_dir, current_entry->vtfs_inode_mode, current_entry->vtfs_inode_ino);
+      new_inode->i_size = new_vtfs_entry->vtfs_inode_size;
+      d_add(new_dentry, new_inode);
+      inc_nlink_all(old_dentry->d_inode->i_ino, old_dentry->d_inode->i_nlink + 1);
+      return 0;
+    }
+  }
+  return -ENOENT;
+}
+
 int vtfs_iterate(struct file* file, struct dir_context* ctx) {
   struct dentry*  dentry = file->f_path.dentry;
   struct inode*   parent_inode = dentry->d_inode;
@@ -366,7 +424,8 @@ struct inode_operations vtfs_inode_ops = {
   .create = vtfs_create,
   .unlink = vtfs_unlink,
   .mkdir  = vtfs_mkdir,
-  .rmdir  = vtfs_rmdir
+  .rmdir  = vtfs_rmdir,
+  .link   = vtfs_link
 };
 
 struct file_operations vtfs_dir_ops = {
