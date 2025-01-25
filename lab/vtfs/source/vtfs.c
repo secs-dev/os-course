@@ -13,7 +13,7 @@ MODULE_DESCRIPTION("A simple FS kernel module");
 
 #define LOG(fmt, ...) pr_info("[" MODULE_NAME "]: " fmt, ##__VA_ARGS__)
 #define MAX_NAME 64
-#define PAGESIZE 1024
+#define PAGESIZE 8
 #define PGROUNDDOWN(a) (((a)) & ~(PAGESIZE - 1))
 
 // Структура записи 'файла' виртуальной файловой системы
@@ -24,6 +24,7 @@ struct vtfs_entry {
   int               vtfs_inode_ino;
   umode_t           vtfs_inode_mode;
   size_t            vtfs_inode_size;
+  size_t            vtfs_entry_count_of_pages;
   ino_t             vtfs_entry_parent_ino;
   struct list_head  vtfs_entry_data;
 };
@@ -99,6 +100,7 @@ int vtfs_create(
   strcpy(new_vtfs_entry->vtfs_entry_name, child_dentry->d_name.name);
   new_vtfs_entry->vtfs_entry_parent_ino = parent_inode->i_ino;
   new_vtfs_entry->vtfs_inode_size = 0;
+  new_vtfs_entry->vtfs_entry_count_of_pages = 0;
   new_vtfs_entry->vtfs_inode_mode = mode | S_IRWXU | S_IRWXG | S_IRWXO;
   INIT_LIST_HEAD(&(new_vtfs_entry->vtfs_entry_data));
 
@@ -119,6 +121,11 @@ int vtfs_unlink(
       printk(KERN_INFO "vtfs_unlink: Файл %s удалён\n", child_dentry->d_name.name);
       list_del(position);
       kfree(position);
+      while(!list_empty(&(current_entry->vtfs_entry_data))){
+        struct list_head* to_delete_page = current_entry->vtfs_entry_data.next;
+        list_del(to_delete_page);
+        kfree(to_delete_page);
+      }
       return 0;
     }
   }
@@ -186,8 +193,8 @@ ssize_t vtfs_read(
   struct list_head*       position;
   struct vtfs_entry_page* current_page;
   struct list_head*       current_page_position;
-  int                     current_page_index = 0;
-  ino_t               entry_ino = filp->f_inode->i_ino;
+  int                     current_page_index = -1;
+  ino_t                   entry_ino = filp->f_inode->i_ino;
   ssize_t bytes_read = 0;
   int start_pagenumber  = PGROUNDDOWN(*offset);
   int start_pageindex   = start_pagenumber / PAGESIZE;
@@ -204,13 +211,13 @@ ssize_t vtfs_read(
       if(*offset >= current_entry->vtfs_inode_size) return 0;
       if(list_empty(&(current_entry->vtfs_entry_data))) return 0;
       printk("read: %d | %d | %d | %d\n", start_pageindex, end_pageindex, *offset, len);
-      // Рассмотрим случаи
-      if (start_pagenumber == end_pagenumber){
-        list_for_each((current_page_position), &(current_entry->vtfs_entry_data)){
-          current_page = (struct vtfs_entry_page*) current_page_position;
+      
+      list_for_each(current_page_position, &(current_entry->vtfs_entry_data)){
+          current_page_index++;
+          current_page = (struct vtfs_entry_page *)  current_page_position;
           if(current_page_index == start_pageindex){
-            //TODO we find needed page
-            bytes_read = (ssize_t) len;
+            // Read one page
+            bytes_read = len < PAGESIZE - (*offset) % PAGESIZE ? len : PAGESIZE - (*offset) % PAGESIZE;
             if(copy_to_user(
               buffer,
               current_page->data + (*offset) % PAGESIZE,
@@ -219,17 +226,13 @@ ssize_t vtfs_read(
               return 0;
               // return -EFAULT;
             }
+            printk("File is read by %d bytes from offset %d. current file size = %d\n", bytes_read, *offset, current_entry->vtfs_inode_size);
+
             *offset += bytes_read;
             return bytes_read;
-          } else {
-            current_page_index++;
           }
-        }
-        return 0;
-      } else {
-        //TODO implement
-        return 0;
       }
+      
       return bytes_read;
     }
   }
@@ -250,7 +253,6 @@ ssize_t vtfs_write(
   // Для навигации по страницам:
   struct vtfs_entry_page* current_page;
   struct list_head*       current_page_position;
-  int                     current_page_index = 0;
   // Для индексации страниц:
   int start_pagenumber  = PGROUNDDOWN(*offset);
   int start_pageindex   = start_pagenumber / PAGESIZE;
@@ -262,34 +264,60 @@ ssize_t vtfs_write(
     current_entry = (struct vtfs_entry*) position;
     if(current_entry->vtfs_inode_ino == entry_ino){
       // We found a file
+      printk("write: %d | %d | %d | %d\n", end_pageindex, end_pagenumber, *offset, len);
+      current_entry->vtfs_inode_size = *offset + len;
       if(len == 0) return 0;
       if(list_empty(&(current_entry->vtfs_entry_data))){
         if((new_page = kmalloc(sizeof(struct vtfs_entry_page), GFP_KERNEL)) == 0){
           printk(KERN_ERR "Not enough memory to allocate the page\n");
-          return 0;
+          return len;
         }
-        list_add((struct list_head*)new_page, &(current_entry->vtfs_entry_data));
-        printk("allocate one page for dentry\n");
+        list_add_tail((struct list_head*)new_page, &(current_entry->vtfs_entry_data));
+        current_entry->vtfs_entry_count_of_pages++;
+        printk("allocate first page for dentry\n");
       }
-      printk("write: %d | %d | %d\n", end_pageindex, *offset, len);
-      bytes_write = len;
-      if(end_pageindex != 0) return 0;
-      current_page = (struct vtfs_entry_page*) current_entry->vtfs_entry_data.next;
-      if(copy_from_user(
-        current_page->data + (*offset) % PAGESIZE,
-        buffer,
-        bytes_write
-      ) != 0){
-        return 0;
-        // return -EFAULT;
+      int current_page_index = -1;
+      if(current_entry->vtfs_entry_count_of_pages <= end_pageindex){
+        // Необходимо аллоцировать страцницы
+        list_for_each(current_page_position, &(current_entry->vtfs_entry_data)){
+          current_page_index++;
+          current_page = (struct vtfs_entry_page *)  current_page_position;
+          if(list_is_last(current_page_position, &(current_entry->vtfs_entry_data))){
+            if(current_page_index < end_pageindex){
+              if((new_page = kmalloc(sizeof(struct vtfs_entry_page), GFP_KERNEL)) == 0){
+                printk(KERN_ERR "Not enough memory to allocate the page\n");
+                return len;
+              }
+              list_add_tail((struct list_head*)new_page, &(current_entry->vtfs_entry_data));
+              current_entry->vtfs_entry_count_of_pages++;
+              printk("allocate page #%d for dentry\n", current_page_index + 1);
+            }
+          }
+        }
       }
-      current_entry->vtfs_inode_size += bytes_write;
-      *offset += len;
-      printk("File is written\n");
-      return bytes_write;
+      current_page_index = -1;
+      list_for_each(current_page_position, &(current_entry->vtfs_entry_data)){
+          current_page_index++;
+          current_page = (struct vtfs_entry_page *)  current_page_position;
+          if (current_page_index == start_pageindex){
+            bytes_write = len < PAGESIZE - (*offset) % PAGESIZE ? len : PAGESIZE - (*offset) % PAGESIZE;
+            if(copy_from_user(
+              current_page->data + (*offset) % PAGESIZE,
+              buffer,
+              bytes_write
+            ) != 0){
+              return 0;
+              // return -EFAULT;
+            }
+            printk("File is written by %d bytes from offset %d. current file size = %d\n", bytes_write, *offset, current_entry->vtfs_inode_size);
+            *offset += bytes_write;
+            return bytes_write;
+          } 
+      }
+      return len;
     }
   }
-  return 0;
+  return len;
 }
 
 int vtfs_iterate(struct file* file, struct dir_context* ctx) {
