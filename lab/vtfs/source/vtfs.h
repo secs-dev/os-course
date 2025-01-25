@@ -58,6 +58,11 @@ int vtfs_rmdir(struct inode*, struct dentry*);
 ssize_t vtfs_read(struct file *filp, char __user *buffer, size_t len, loff_t *offset);
 ssize_t vtfs_write(struct file *filp, const char __user *buffer, size_t len, loff_t *offset);
 
+int vtfs_link(
+  struct dentry *old_dentry, 
+  struct inode *parent_dir, 
+  struct dentry *new_dentry
+);
 // =========
 // Структуры
 // =========
@@ -67,6 +72,7 @@ struct inode_operations vtfs_inode_ops = {
     .unlink = vtfs_unlink,
     .mkdir = vtfs_mkdir,
     .rmdir = vtfs_rmdir,
+    .link = vtfs_link,
 };
 
 struct file_operations vtfs_dir_ops = {
@@ -98,7 +104,6 @@ struct vtfs_file {
 // Добавить это поле в inode для хранения списка дочерних файлов
 struct vtfs_inode_info {
   struct list_head children;  // Список дочерних файлов
-  struct inode vfs_inode;     // Оригинальный inode
 };
 
 struct vtfs_file_content {

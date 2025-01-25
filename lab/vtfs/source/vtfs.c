@@ -215,7 +215,7 @@ int vtfs_unlink(struct inode* parent_inode, struct dentry* child_dentry) {
   list_for_each_entry_safe(file, tmp, &info->children, list) {
     if (!strcmp(file->name, name)) {
       // Удаляем содержимое файла, если оно есть
-      if (file->inode && file->inode->i_private) {
+      if (file->inode && file->inode->i_private && file->inode->i_nlink < 1) {
         struct vtfs_file_content* content = file->inode->i_private;
         kfree(content->data);  // Освобождаем данные
         kfree(content);        // Освобождаем структуру
@@ -343,6 +343,9 @@ ssize_t vtfs_write(struct file* filp, const char __user* buffer, size_t len, lof
     content->data = new_data;
     content->size = *offset + len;
   }
+  else {
+    memset(content->data, 0, content->size); // без оптимизаций файл остается прежнего размера
+  }
 
   if (copy_from_user(content->data + *offset, buffer, len)) {
     return -EFAULT;  // Ошибка копирования из user-space
@@ -351,4 +354,32 @@ ssize_t vtfs_write(struct file* filp, const char __user* buffer, size_t len, lof
   *offset += len;
   printk(KERN_INFO "vtfs_write: wrote %zu bytes, new size=%zu\n", len, content->size);
   return len;
+}
+
+// ==============
+// Жёсткие ссылки
+// ==============
+int vtfs_link(struct dentry* old_dentry, struct inode* parent_dir, struct dentry* new_dentry) {
+  struct inode* old_inode = d_inode(old_dentry);
+
+  // Увеличиваем счётчик ссылок
+  inode_inc_link_count(old_inode);
+
+  // Создаём запись в каталоге для новой ссылки
+  struct vtfs_inode_info* info = parent_dir->i_private;
+  struct vtfs_file* new_file = kmalloc(sizeof(struct vtfs_file), GFP_KERNEL);
+  if (!new_file) {
+    inode_dec_link_count(old_inode);
+    return -ENOMEM;
+  }
+
+  strncpy(new_file->name, new_dentry->d_name.name, 256);
+  new_file->inode = old_inode;
+  list_add(&new_file->list, &info->children);
+
+  // Привязываем dentry к inode
+  d_add(new_dentry, old_inode);
+
+  printk(KERN_INFO "Created hard link '%s' -> inode %lu\n", new_file->name, old_inode->i_ino);
+  return 0;
 }
