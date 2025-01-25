@@ -266,6 +266,7 @@ ssize_t vtfs_write(
       // We found a file
       printk("write: %d | %d | %d | %d\n", end_pageindex, end_pagenumber, *offset, len);
       current_entry->vtfs_inode_size = *offset + len;
+      current_entry->vtfs_entry_dentry->d_inode->i_size = *offset + len;
       if(len == 0) return 0;
       if(list_empty(&(current_entry->vtfs_entry_data))){
         if((new_page = kmalloc(sizeof(struct vtfs_entry_page), GFP_KERNEL)) == 0){
