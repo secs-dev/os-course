@@ -54,6 +54,72 @@ struct inode_operations vtfs_inode_ops = {
     .rmdir = vtfs_rmdir,
 };
 
+ssize_t vtfs_read(struct file* file, char __user* buf, size_t len, loff_t* ppos) {
+  struct inode* inode = file_inode(file);
+  struct vtfs_file* file_data = inode->i_private;
+  size_t available, to_copy;
+
+  if (!file_data || !file_data->data) {
+    LOG("No data in file %s\n", file_data ? file_data->name : "NULL");
+    return 0;
+  }
+  available = file_data->size - *ppos;
+  if (available <= 0) {
+    return 0;
+  }
+
+  to_copy = min(len, available);
+
+  if (copy_to_user(buf, file_data->data + *ppos, to_copy)) {
+    LOG("Failed to copy data to US\n");
+    return -EFAULT;
+  }
+
+  *ppos += to_copy;
+  LOG("Read %zu bytes from file %s at offset %lld\n", to_copy, file_data->name, *ppos);
+  return to_copy;
+}
+
+ssize_t vtfs_write(struct file* file, const char __user* buf, size_t len, loff_t* ppos) {
+  struct inode* inode = file->f_inode;
+  struct vtfs_file* file_data = inode->i_private;
+  char* new_data;
+  size_t new_size;
+
+  if (!file_data) {
+    LOG("Invalid file data\n");
+    return -EINVAL;
+  }
+
+  new_size = max((size_t)(*ppos + len), file_data->size);
+
+  if (new_size > file_data->size) {
+    new_data = krealloc(file_data->data, new_size, GFP_KERNEL);
+    if (!new_data) {
+      LOG("Realloc failed\n");
+      return -ENOMEM;
+    }
+
+    if (new_size > file_data->size) {
+      memset(new_data + file_data->size, 0, new_size - file_data->size);
+    }
+
+    memset(new_data + file_data->size, 0, new_size - file_data->size);
+    file_data->data = new_data;
+    file_data->size = new_size;
+  }
+
+  if (copy_from_user(file_data->data + *ppos, buf, len)) {
+    LOG("Failed to copy data from US\n");
+    return -EFAULT;
+  }
+
+  *ppos += len;
+  LOG("Wrote %zu bytes to file %s at offset %lld\n", len, file_data->name, *ppos);
+
+  return len;
+}
+
 int vtfs_create(
     struct mnt_idmap* idmap,
     struct inode* parent_inode,
@@ -88,7 +154,9 @@ int vtfs_create(
   new_file->data = NULL;
 
   new_file->inode = vtfs_get_inode(parent_inode->i_sb, parent_inode, mode, new_file->ino);
-  new_file->inode->i_private = NULL;
+  new_file->inode->i_private = new_file;  // happy debugging
+  new_file->inode->i_op = &vtfs_inode_ops;
+  new_file->inode->i_fop = &vtfs_file_ops;
 
   list_add(&new_file->list, &parent_dir->children);
   d_add(child_dentry, new_file->inode);
