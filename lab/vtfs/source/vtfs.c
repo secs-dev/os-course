@@ -1,4 +1,3 @@
-
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -41,10 +40,18 @@ int vtfs_create(struct mnt_idmap*, struct inode*, struct dentry*, umode_t, bool)
 int vtfs_unlink(struct inode*, struct dentry*);
 int vtfs_mkdir(struct mnt_idmap*, struct inode*, struct dentry*, umode_t);
 int vtfs_rmdir(struct inode*, struct dentry*);
+ssize_t vtfs_read(struct file*, char __user*, size_t, loff_t*);
+ssize_t vtfs_write(struct file*, const char __user*, size_t, loff_t*);
 int vtfs_link(struct dentry*, struct inode*, struct dentry*);
 
 struct file_operations vtfs_dir_ops = {
     .iterate_shared = vtfs_iterate,
+};
+
+struct file_operations vtfs_file_ops = {
+    .read = vtfs_read,
+    .write = vtfs_write,
+    .llseek = generic_file_llseek,
 };
 
 struct inode_operations vtfs_inode_ops = {
