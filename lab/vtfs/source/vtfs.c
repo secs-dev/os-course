@@ -41,6 +41,7 @@ int vtfs_create(struct mnt_idmap*, struct inode*, struct dentry*, umode_t, bool)
 int vtfs_unlink(struct inode*, struct dentry*);
 int vtfs_mkdir(struct mnt_idmap*, struct inode*, struct dentry*, umode_t);
 int vtfs_rmdir(struct inode*, struct dentry*);
+int vtfs_link(struct dentry*, struct inode*, struct dentry*);
 
 struct file_operations vtfs_dir_ops = {
     .iterate_shared = vtfs_iterate,
@@ -52,6 +53,7 @@ struct inode_operations vtfs_inode_ops = {
     .unlink = vtfs_unlink,
     .mkdir = vtfs_mkdir,
     .rmdir = vtfs_rmdir,
+    .link = vtfs_link,
 };
 
 ssize_t vtfs_read(struct file* file, char __user* buf, size_t len, loff_t* ppos) {
@@ -202,6 +204,49 @@ int vtfs_unlink(struct inode* parent_inode, struct dentry* child_dentry) {
 
   LOG("File %s not found\n", name);
   return -ENOENT;
+}
+
+int vtfs_link(struct dentry* old_dentry, struct inode* parent_inode, struct dentry* new_dentry) {
+  struct vtfs_file* old_file;
+  struct vtfs_dir* parent_dir;
+  struct vtfs_file* new_file;
+
+  old_file = old_dentry->d_inode->i_private;
+  parent_dir = parent_inode->i_private;
+
+  if (S_ISDIR(old_file->mode)) {
+    LOG("Hard links to directories are not allowed\n");
+    return -EPERM;
+  }
+
+  struct list_head* pos;
+  list_for_each(pos, &parent_dir->children) {
+    struct vtfs_file* entry = list_entry(pos, struct vtfs_file, list);
+    if (strcmp(entry->name, new_dentry->d_name.name) == 0) {
+      LOG("File with the same name already exists: %s\n", new_dentry->d_name.name);
+      return -EEXIST;
+    }
+  }
+
+  new_file = kzalloc(sizeof(struct vtfs_file), GFP_KERNEL);
+  if (!new_file) {
+    LOG("kzalloc failed\n");
+    return -ENOMEM;
+  }
+
+  new_file->name = kstrdup(new_dentry->d_name.name, GFP_KERNEL);
+  new_file->size = old_file->size;
+  new_file->data = old_file->data;
+  new_file->inode = old_dentry->d_inode;
+
+  list_add_tail(&new_file->list, &parent_dir->children);
+
+  d_add(new_dentry, old_dentry->d_inode);
+
+  inode_inc_link_count(old_dentry->d_inode);
+
+  LOG("Hard link created\n");
+  return 0;
 }
 
 int vtfs_iterate(struct file* flip, struct dir_context* ctx) {
