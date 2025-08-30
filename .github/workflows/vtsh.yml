@@ -16,17 +16,14 @@ jobs:
           - Asan
           - Release
     runs-on: ubuntu-latest
+    container:
+      image: silkeh/clang:latest
     defaults:
       run:
         working-directory: ./lab/vtsh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install cmake clang clang-tidy clang-format
 
       - name: Clang Format
         run: |
