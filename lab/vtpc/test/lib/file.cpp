@@ -1,0 +1,123 @@
+#include "file.hpp"
+
+#include <cstddef>
+#include <functional>
+#include <memory>
+#include <string_view>
+#include <utility>
+
+#include "exception.hpp"
+
+extern "C" {
+#include "fcntl.h"
+#include "unistd.h"
+#include "vtpc.h"
+}
+
+namespace vt {
+
+constexpr auto flags = O_RDWR | O_CREAT;
+
+file_exception::file_exception(ssize_t code) : code_(code) {
+  (*this) << "code " << code << ": ";
+}
+
+auto file_exception::code() const -> ssize_t {
+  return code_;
+}
+
+struct io {
+  std::function<int(const char* path, int mode)> open;
+  std::function<int(int fd)> close;
+  std::function<ssize_t(int fd, void* buf, size_t count)> read;
+  std::function<ssize_t(int fd, const void* buf, size_t count)> write;
+  std::function<off_t(int fd, off_t offset, int whence)> lseek;
+  std::function<int(int fd)> fsync;
+};
+
+template <class A>
+void robust_do(A action, int fd, auto buf, size_t count) {
+  size_t total = 0;
+  while (total < count) {
+    ssize_t local = action(fd, buf, count);
+    if (local < 0) {
+      throw vt::file_exception(local)
+          << "failed to read/write " << count << "bytes from file with fd "
+          << fd << ": " << strerror(errno);  // NOLINT(concurrency-mt-unsafe);
+    }
+
+    total += local;
+  }
+}
+
+class io_file final : public file {
+public:
+  explicit io_file(std::string_view path, io io)
+      : fd_(io.open(path.data(), flags)), io_(std::move(io)) {
+    if (fd_ < 0) {
+      throw vt::file_exception(fd_)
+          << "failed to open file '" << path << "'"
+          << ": " << strerror(errno);  // NOLINT(concurrency-mt-unsafe);
+    }
+  }
+
+  ~io_file() override {
+    (void)io_.close(fd_);
+  }
+
+  void read(char* buffer, size_t count) override {
+    robust_do(io_.read, fd_, buffer, count);
+  }
+
+  void write(const char* buffer, size_t count) override {
+    robust_do(io_.write, fd_, buffer, count);
+  }
+
+  void seek(off_t offset) override {
+    if (io_.lseek(fd_, offset, SEEK_SET) == -1) {
+      throw vt::file_exception(-1)
+          << "failed to seek to offset " << offset << "file with fd " << fd_
+          << ": " << strerror(errno);  // NOLINT(concurrency-mt-unsafe)
+    }
+  }
+
+  void sync() override {
+    if (io_.fsync(fd_) == -1) {
+      throw vt::file_exception(-1)
+          << "failed to fsync file with fd " << fd_ << ": "
+          << strerror(errno);  // NOLINT(concurrency-mt-unsafe)
+    }
+  }
+
+private:
+  int fd_;
+  io io_;
+};
+
+auto file::open_libc(std::string_view path) -> std::unique_ptr<file> {
+  io io = {
+      .open = ::open,
+      .close = ::close,
+      .read = ::read,
+      .write = ::write,
+      .lseek = ::lseek,
+      .fsync = ::fsync,
+  };
+
+  return std::make_unique<io_file>(path, std::move(io));
+}
+
+auto file::open_vtpc(std::string_view path) -> std::unique_ptr<file> {
+  io io = {
+      .open = ::vtpc_open,
+      .close = ::vtpc_close,
+      .read = ::vtpc_read,
+      .write = ::vtpc_write,
+      .lseek = ::vtpc_lseek,
+      .fsync = ::vtpc_fsync,
+  };
+
+  return std::make_unique<io_file>(path, std::move(io));
+}
+
+}  // namespace vt

@@ -1,0 +1,8 @@
+# CMake
+build/
+
+# Clangd
+.cache/
+
+# Python
+__pycache__/
