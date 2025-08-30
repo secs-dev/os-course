@@ -1,0 +1,49 @@
+name: Test VT Shell
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'lab/vtsh/**'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        cmake_build_type:
+          - Asan
+          - Release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./lab/vtsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install cmake clang clang-tidy clang-format
+
+      - name: Clang Format
+        run: |
+          find . -path ./build -prune -o \( -iname '*.c' -o -iname '*.h' \) -exec \
+            clang-format --style=file --dry-run --verbose {} \;
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }}
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Clang Tidy
+        run: |
+          find . -path ./build -prune -o \( -iname '*.c' -o -iname '*.h' \) -exec \
+            clang-tidy -p . {} \;
+
+      - name: Test
+        working-directory: ./lab/vtsh/test
+        run: python3 -m unittest discover

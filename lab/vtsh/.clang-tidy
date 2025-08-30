@@ -11,6 +11,7 @@ Checks: |
     modernize-*,
     performance-*,
     portability-*,
+    -portability-avoid-pragma-once,
     readability-*
 WarningsAsErrors: '*'
 FormatStyle: file
