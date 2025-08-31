@@ -1,3 +1,4 @@
+
 #include "cmp_file.hpp"
 
 #include <optional>
@@ -42,28 +43,30 @@ cmp_file::cmp_file(std::unique_ptr<file> lhs, std::unique_ptr<file> rhs)
 }
 
 auto cmp_file::read(char* buffer, size_t count) -> void {
+  std::string lhs(count, ' ');
+  std::string rhs(count, ' ');
   Compare(
-      [buffer, count, this] { lhs_->read(buffer, count); },
-      [buffer, count, this] { lhs_->read(buffer, count); }
+      [&] { lhs_->read(lhs.data(), count); },
+      [&] { rhs_->read(rhs.data(), count); }
   );
+  if (lhs != rhs) {
+    throw vt::cmp_file_exception() << "'" << lhs << "' != '" << rhs << "'";
+  }
+  std::memcpy(buffer, lhs.data(), count);
 }
 
 auto cmp_file::write(const char* buffer, size_t count) -> void {
   Compare(
-      [buffer, count, this] { lhs_->write(buffer, count); },
-      [buffer, count, this] { lhs_->write(buffer, count); }
+      [&] { lhs_->write(buffer, count); }, [&] { rhs_->write(buffer, count); }
   );
 }
 
 auto cmp_file::seek(off_t offset) -> void {
-  Compare(
-      [offset, this] { lhs_->seek(offset); },
-      [offset, this] { lhs_->seek(offset); }
-  );
+  Compare([&] { lhs_->seek(offset); }, [&] { rhs_->seek(offset); });
 }
 
 auto cmp_file::sync() -> void {
-  Compare([this] { lhs_->sync(); }, [this] { rhs_->sync(); });
+  Compare([&] { lhs_->sync(); }, [this] { rhs_->sync(); });
 }
 
 }  // namespace vt

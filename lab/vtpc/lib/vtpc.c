@@ -3,8 +3,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-int vtpc_open(const char* path, int mode) {
-  return open(path, mode);
+int vtpc_open(const char* path, int mode, int access) {
+  return open(path, mode, access);
 }
 
 int vtpc_close(int fd) {

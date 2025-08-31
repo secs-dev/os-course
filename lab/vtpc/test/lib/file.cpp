@@ -17,6 +17,7 @@ extern "C" {
 namespace vt {
 
 constexpr auto flags = O_RDWR | O_CREAT;
+constexpr auto access = 0777;
 
 file_exception::file_exception(ssize_t code) : code_(code) {
   (*this) << "code " << code << ": ";
@@ -27,7 +28,7 @@ auto file_exception::code() const -> ssize_t {
 }
 
 struct io {
-  std::function<int(const char* path, int mode)> open;
+  std::function<int(const char* path, int mode, int access)> open;
   std::function<int(int fd)> close;
   std::function<ssize_t(int fd, void* buf, size_t count)> read;
   std::function<ssize_t(int fd, const void* buf, size_t count)> write;
@@ -53,7 +54,7 @@ void robust_do(A action, int fd, auto buf, size_t count) {
 class io_file final : public file {
 public:
   explicit io_file(std::string_view path, io io)
-      : fd_(io.open(path.data(), flags)), io_(std::move(io)) {
+      : fd_(io.open(path.data(), flags, access)), io_(std::move(io)) {
     if (fd_ < 0) {
       throw vt::file_exception(fd_)
           << "failed to open file '" << path << "'"
