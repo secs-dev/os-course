@@ -56,7 +56,7 @@ auto cmp_file::read(char* buffer, size_t count) -> void {
   if (lhs != rhs) {
     throw vt::cmp_file_exception() << "'" << lhs << "' != '" << rhs << "'";
   }
-  std::memcpy(buffer, lhs.data(), count);
+  memcpy(buffer, lhs.data(), count);
 }
 
 auto cmp_file::write(const char* buffer, size_t count) -> void {
