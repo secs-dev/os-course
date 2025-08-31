@@ -1,0 +1,51 @@
+name: Test VT Page Cache
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'lab/vtpc/**'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        cmake_build_type:
+          - Asan
+          - Release
+    runs-on: ubuntu-latest
+    container:
+      image: silkeh/clang:latest
+    defaults:
+      run:
+        working-directory: ./lab/vtpc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clang Format
+        run: |
+          find . -path ./build -prune -o \( -iname '*.c' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.hpp' \) -exec \
+            clang-format --style=file --dry-run --verbose {} \;
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }}
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Clang Tidy
+        run: |
+          find . -path ./build -prune -o \( -iname '*.c' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.hpp' \) -exec \
+            clang-tidy -p . {} \;
+
+      - name: Test Basic
+        run: ./build/test/test_basic
+
+      - name: Test Sequential
+        run: ./build/test/test_seq
+
+      - name: Test Random
+        run: ./build/test/test_random
