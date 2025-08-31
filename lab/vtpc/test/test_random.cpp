@@ -1,7 +1,13 @@
+#include <sys/types.h>
+
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <memory>
 #include <random>
+#include <string>
+#include <utility>
 
 #include "cmp_file.hpp"
 #include "file.hpp"

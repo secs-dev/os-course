@@ -27,8 +27,9 @@ jobs:
 
       - name: Clang Format
         run: |
-          find . -path ./build -prune -o \( -iname '*.c' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.hpp' \) -exec \
-            clang-format --style=file --dry-run --verbose {} \;
+          find . -path ./build -prune -o \
+            \( -iname '*.c' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.hpp' \) \
+            -exec clang-format --style=file --dry-run --verbose {} \;
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }}
@@ -37,8 +38,10 @@ jobs:
         run: cmake --build build
 
       - name: Clang Tidy
+        if: matrix.cmake_build_type == 'Release'
         run: |
-          find . -path ./build -prune -o \( -iname '*.c' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.hpp' \) -exec \
+          find . -path ./build -prune -o \
+            \( -iname '*.c' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.hpp' \) -exec \
             clang-tidy -p ./build {} \;
 
       - name: Test Basic

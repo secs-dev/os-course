@@ -1,6 +1,8 @@
 #include "file.hpp"
 
+#include <cerrno>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -10,8 +12,10 @@
 #include "exception.hpp"
 
 extern "C" {
-#include "fcntl.h"
-#include "unistd.h"
+#include <fcntl.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include "vtpc.h"
 }
 
@@ -40,16 +44,16 @@ template <class A>
 void robust_do(A action, int fd, auto buf, size_t count) {
   size_t total = 0;
   while (total < count) {
-    ssize_t local = action(fd, buf, count);
+    const ssize_t local = action(fd, buf, count);
     if (local < 0) {
       throw vt::file_exception(local)
           << "failed to read/write " << count << " bytes from file with fd "
           << fd << ": " << strerror(errno);  // NOLINT(concurrency-mt-unsafe);
     }
     if (local == 0) {
-      throw vt::file_exception(0) << "failed to read/write " << count
-                                  << " bytes from file with fd " << fd << ": "
-                                  << "EOF after reading " << total << " bytes";
+      throw vt::file_exception(0)
+          << "failed to read/write " << count << " bytes from file with fd "
+          << fd << ": " << "EOF after reading " << total << " bytes";
     }
 
     total += local;
@@ -62,8 +66,8 @@ public:
       : fd_(io.open(path.data(), flags, access)), io_(std::move(io)) {
     if (fd_ < 0) {
       throw vt::file_exception(fd_)
-          << "failed to open file '" << path << "'"
-          << ": " << strerror(errno);  // NOLINT(concurrency-mt-unsafe);
+          << "failed to open file '" << path << "'" << ": "
+          << strerror(errno);  // NOLINT(concurrency-mt-unsafe);
     }
   }
 

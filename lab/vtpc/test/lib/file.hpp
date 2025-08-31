@@ -1,7 +1,10 @@
 #pragma once
 
+#include <sys/types.h>
+
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <string_view>
 
 #include "exception.hpp"
@@ -27,7 +30,7 @@ public:
   virtual auto sync() -> void = 0;
 
   auto write(std::string_view text) -> void {
-    return write(text.data(), text.size());
+    write(text.data(), text.size());
   }
 
   auto read(size_t size) -> std::string {

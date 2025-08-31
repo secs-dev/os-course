@@ -1,6 +1,8 @@
 #include "vtpc.h"
 
 #include <fcntl.h>
+#include <stddef.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 int vtpc_open(const char* path, int mode, int access) {

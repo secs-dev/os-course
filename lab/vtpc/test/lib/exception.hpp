@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <sstream>
+#include <type_traits>
 
 namespace vt {
 
@@ -26,8 +27,8 @@ private:
 };
 
 template <class E, class T>
-static inline auto operator<<(E&& e [[clang::lifetimebound]], const T& t)
-    -> std::enable_if_t<std::is_base_of_v<exception, std::decay_t<E>>, E&&> {
+  requires std::is_base_of_v<exception, std::decay_t<E>>
+static auto operator<<(E&& e [[clang::lifetimebound]], const T& t) -> E&& {
   e.Append(t);
   return std::forward<E>(e);
 }

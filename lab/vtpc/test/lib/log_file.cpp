@@ -1,6 +1,11 @@
 #include "log_file.hpp"
 
+#include <sys/types.h>
+
+#include <cstddef>
 #include <iostream>
+#include <memory>
+#include <utility>
 
 #include "file.hpp"
 

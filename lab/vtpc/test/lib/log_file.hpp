@@ -1,5 +1,10 @@
 #pragma once
 
+#include <sys/types.h>
+
+#include <cstddef>
+#include <memory>
+
 #include "file.hpp"
 
 namespace vt {

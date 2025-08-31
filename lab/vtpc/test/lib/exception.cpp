@@ -1,1 +1,1 @@
-#include "exception.hpp"
+#include "exception.hpp"  // NOLINT

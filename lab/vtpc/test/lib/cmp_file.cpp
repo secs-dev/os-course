@@ -1,7 +1,13 @@
 #include "cmp_file.hpp"
 
+#include <sys/types.h>
+
+#include <cstddef>
 #include <cstring>
+#include <memory>
 #include <optional>
+#include <string>
+#include <utility>
 
 #include "exception.hpp"
 #include "file.hpp"
