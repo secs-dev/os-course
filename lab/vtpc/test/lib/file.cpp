@@ -1,6 +1,7 @@
 #include "file.hpp"
 
 #include <cstddef>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <string_view>
