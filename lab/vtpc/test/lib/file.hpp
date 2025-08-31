@@ -26,6 +26,16 @@ public:
   virtual auto seek(off_t offset) -> void = 0;
   virtual auto sync() -> void = 0;
 
+  auto write(std::string_view text) -> void {
+    return write(text.data(), text.size());
+  }
+
+  auto read(size_t size) -> std::string {
+    std::string text(size, 0);
+    read(text.data(), size);
+    return text;
+  }
+
   static auto open_libc(std::string_view path) -> std::unique_ptr<file>;
   static auto open_vtpc(std::string_view path) -> std::unique_ptr<file>;
 };
