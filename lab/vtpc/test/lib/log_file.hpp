@@ -6,8 +6,8 @@ namespace vt {
 
 class log_file final : public file {
 public:
-  using file::write;
   using file::read;
+  using file::write;
 
   explicit log_file(std::unique_ptr<file> file);
   ~log_file() override = default;

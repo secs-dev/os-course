@@ -8,8 +8,8 @@ class cmp_file_exception : public vt::exception {};
 
 class cmp_file final : public file {
 public:
-  using file::write;
   using file::read;
+  using file::write;
 
   cmp_file(std::unique_ptr<file> lhs, std::unique_ptr<file> rhs);
   ~cmp_file() override = default;

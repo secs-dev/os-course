@@ -1,4 +1,3 @@
-
 #include "cmp_file.hpp"
 
 #include <optional>
