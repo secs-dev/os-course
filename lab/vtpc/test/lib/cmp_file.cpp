@@ -1,7 +1,7 @@
 #include "cmp_file.hpp"
 
-#include <optional>
 #include <cstring>
+#include <optional>
 
 #include "exception.hpp"
 #include "file.hpp"

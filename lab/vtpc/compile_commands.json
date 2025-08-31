@@ -1,0 +1,50 @@
+[
+{
+  "directory": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/build/lib",
+  "command": "/usr/bin/cc  -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/lib/.  -arch arm64 -o CMakeFiles/vtpc.dir/vtpc.c.o -c /Users/vitya-smirnov/itmo/os-course/lab/vtpc/lib/vtpc.c",
+  "file": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/lib/vtpc.c",
+  "output": "lib/CMakeFiles/vtpc.dir/vtpc.c.o"
+},
+{
+  "directory": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/build/test",
+  "command": "/usr/bin/c++  -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/. -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/. -std=c++2b -arch arm64 -o CMakeFiles/test_basic.dir/test_basic.cpp.o -c /Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/test_basic.cpp",
+  "file": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/test_basic.cpp",
+  "output": "test/CMakeFiles/test_basic.dir/test_basic.cpp.o"
+},
+{
+  "directory": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/build/test",
+  "command": "/usr/bin/c++  -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/. -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/. -std=c++2b -arch arm64 -o CMakeFiles/test_seq.dir/test_seq.cpp.o -c /Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/test_seq.cpp",
+  "file": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/test_seq.cpp",
+  "output": "test/CMakeFiles/test_seq.dir/test_seq.cpp.o"
+},
+{
+  "directory": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/build/test",
+  "command": "/usr/bin/c++  -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/. -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/. -std=c++2b -arch arm64 -o CMakeFiles/test_random.dir/test_random.cpp.o -c /Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/test_random.cpp",
+  "file": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/test_random.cpp",
+  "output": "test/CMakeFiles/test_random.dir/test_random.cpp.o"
+},
+{
+  "directory": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/build/test/lib",
+  "command": "/usr/bin/c++  -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/. -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/lib/. -std=c++2b -arch arm64 -o CMakeFiles/vt.dir/cmp_file.cpp.o -c /Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/cmp_file.cpp",
+  "file": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/cmp_file.cpp",
+  "output": "test/lib/CMakeFiles/vt.dir/cmp_file.cpp.o"
+},
+{
+  "directory": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/build/test/lib",
+  "command": "/usr/bin/c++  -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/. -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/lib/. -std=c++2b -arch arm64 -o CMakeFiles/vt.dir/exception.cpp.o -c /Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/exception.cpp",
+  "file": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/exception.cpp",
+  "output": "test/lib/CMakeFiles/vt.dir/exception.cpp.o"
+},
+{
+  "directory": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/build/test/lib",
+  "command": "/usr/bin/c++  -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/. -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/lib/. -std=c++2b -arch arm64 -o CMakeFiles/vt.dir/file.cpp.o -c /Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/file.cpp",
+  "file": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/file.cpp",
+  "output": "test/lib/CMakeFiles/vt.dir/file.cpp.o"
+},
+{
+  "directory": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/build/test/lib",
+  "command": "/usr/bin/c++  -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/. -I/Users/vitya-smirnov/itmo/os-course/lab/vtpc/lib/. -std=c++2b -arch arm64 -o CMakeFiles/vt.dir/log_file.cpp.o -c /Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/log_file.cpp",
+  "file": "/Users/vitya-smirnov/itmo/os-course/lab/vtpc/test/lib/log_file.cpp",
+  "output": "test/lib/CMakeFiles/vt.dir/log_file.cpp.o"
+}
+]

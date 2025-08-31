@@ -15,6 +15,7 @@ Checks: |
     modernize-*,
     performance-*,
     portability-*,
+    -portability-avoid-pragma-once,
     readability-*
     -readability-identifier-length
 WarningsAsErrors: '*'

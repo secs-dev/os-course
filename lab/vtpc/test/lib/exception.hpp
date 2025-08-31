@@ -9,13 +9,14 @@ class exception : public std::exception {
 public:
   exception() = default;
 
+  [[nodiscard]]
   auto what() const noexcept -> const char* override {
     message_ = buffer_.str();
     return message_.c_str();
   }
 
   template <class T>
-  inline void Append(const T& t) {
+  void Append(const T& t) {
     buffer_ << t;
   }
 

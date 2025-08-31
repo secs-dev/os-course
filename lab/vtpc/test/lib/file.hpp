@@ -12,7 +12,7 @@ class file_exception : public vt::exception {
 public:
   explicit file_exception(ssize_t code);
 
-  auto code() const -> ssize_t;
+  [[nodiscard]] auto code() const -> ssize_t;
 
 private:
   ssize_t code_;
