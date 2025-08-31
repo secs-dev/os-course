@@ -36,10 +36,14 @@ void Compare(A lhs, B rhs) {
         << "(FAIL, FAIL), but codes differ: " << lhs_ex->what() << ", "
         << rhs_ex->what();
   }
+  if (lhs_ex && rhs_ex) {
+    const vt::file_exception& e = *lhs_ex;
+    throw vt::file_exception(e.code()) << e.what();
+  }
 }
 
 cmp_file::cmp_file(std::unique_ptr<file> lhs, std::unique_ptr<file> rhs)
-    : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {
+    : lhs_(std::move(lhs)), file_(std::move(rhs)) {
 }
 
 auto cmp_file::read(char* buffer, size_t count) -> void {
@@ -47,7 +51,7 @@ auto cmp_file::read(char* buffer, size_t count) -> void {
   std::string rhs(count, ' ');
   Compare(
       [&] { lhs_->read(lhs.data(), count); },
-      [&] { rhs_->read(rhs.data(), count); }
+      [&] { file_->read(rhs.data(), count); }
   );
   if (lhs != rhs) {
     throw vt::cmp_file_exception() << "'" << lhs << "' != '" << rhs << "'";
@@ -57,16 +61,16 @@ auto cmp_file::read(char* buffer, size_t count) -> void {
 
 auto cmp_file::write(const char* buffer, size_t count) -> void {
   Compare(
-      [&] { lhs_->write(buffer, count); }, [&] { rhs_->write(buffer, count); }
+      [&] { lhs_->write(buffer, count); }, [&] { file_->write(buffer, count); }
   );
 }
 
 auto cmp_file::seek(off_t offset) -> void {
-  Compare([&] { lhs_->seek(offset); }, [&] { rhs_->seek(offset); });
+  Compare([&] { lhs_->seek(offset); }, [&] { file_->seek(offset); });
 }
 
 auto cmp_file::sync() -> void {
-  Compare([&] { lhs_->sync(); }, [this] { rhs_->sync(); });
+  Compare([&] { lhs_->sync(); }, [this] { file_->sync(); });
 }
 
 }  // namespace vt

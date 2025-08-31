@@ -4,6 +4,7 @@ add_library(
     cmp_file.cpp
     exception.cpp
     file.cpp
+    log_file.cpp
 )
 
 target_include_directories(vt PUBLIC .)

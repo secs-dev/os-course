@@ -11,3 +11,7 @@ target_link_libraries(test_basic PRIVATE vt)
 add_executable(test_seq test_seq.cpp)
 target_include_directories(test_seq PUBLIC .)
 target_link_libraries(test_seq PRIVATE vt)
+
+add_executable(test_random test_random.cpp)
+target_include_directories(test_random PUBLIC .)
+target_link_libraries(test_random PRIVATE vt)

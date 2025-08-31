@@ -20,7 +20,6 @@ constexpr auto flags = O_RDWR | O_CREAT;
 constexpr auto access = 0777;
 
 file_exception::file_exception(ssize_t code) : code_(code) {
-  (*this) << "code " << code << ": ";
 }
 
 auto file_exception::code() const -> ssize_t {
@@ -43,8 +42,13 @@ void robust_do(A action, int fd, auto buf, size_t count) {
     ssize_t local = action(fd, buf, count);
     if (local < 0) {
       throw vt::file_exception(local)
-          << "failed to read/write " << count << "bytes from file with fd "
+          << "failed to read/write " << count << " bytes from file with fd "
           << fd << ": " << strerror(errno);  // NOLINT(concurrency-mt-unsafe);
+    }
+    if (local == 0) {
+      throw vt::file_exception(0) << "failed to read/write " << count
+                                  << " bytes from file with fd " << fd << ": "
+                                  << "EOF after reading " << total << " bytes";
     }
 
     total += local;
