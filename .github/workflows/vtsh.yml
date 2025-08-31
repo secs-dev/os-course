@@ -39,7 +39,7 @@ jobs:
       - name: Clang Tidy
         run: |
           find . -path ./build -prune -o \( -iname '*.c' -o -iname '*.h' \) -exec \
-            clang-tidy -p . {} \;
+            clang-tidy -p ./build {} \;
 
       - name: Test
         working-directory: ./lab/vtsh/test

@@ -39,7 +39,7 @@ jobs:
       - name: Clang Tidy
         run: |
           find . -path ./build -prune -o \( -iname '*.c' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.hpp' \) -exec \
-            clang-tidy -p . {} \;
+            clang-tidy -p ./build {} \;
 
       - name: Test Basic
         run: ./build/test/test_basic
