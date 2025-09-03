@@ -149,6 +149,8 @@ int vtfs_fill_super(struct super_block *sb, void *data, int silent) {
 
 Аргументы `data` и `silent` нам не понадобятся. В этой функции мы используем ещё одну (пока) неизвестную функцию — `vtfs_get_inode`. Она будет создавать новую структуру `inode`, в нашем случае — для корня файловой системы:
 
+<!-- TODO: Update inode_init_ownwer signature according to fresh linux kernal API -->
+
 ```c
 struct inode* vtfs_get_inode(
   struct super_block* sb, 
@@ -245,6 +247,8 @@ drwxrwxrwx 1 root root 0 Oct 24 15:52 vt
 
 После этого мы сможем перейти в `/mnt/vt`, но не можем вывести содержимое директории. На этот раз нам понадобится не `i_op`, а `i_fop` — структура типа [file_operations][21]. Реализуем в ней первую функцию — `iterate`.
 
+<!-- TODO: Update .iterate field name according to fresh linux kernal API -->
+
 ```c
 struct file_operations vtfs_dir_ops = {
   .iterate = vtfs_iterate,
@@ -323,6 +327,8 @@ struct dentry* vtfs_lookup(
 ## Часть 5. Создание и удаление файлов
 
 Теперь научимся создавать и удалять файлы. Добавим ещё два поля в `inode_operations` — `create` и `unlink`: Функция `vtfs_create` вызывается при создании файла и должна возвращать новую `inode` с помощью `d_add`, если создать файл получилось. Рассмотрим простой пример:
+
+<!-- TODO: Update create function signature according to fresh linux kernal API -->
 
 ```c
 int vtfs_create(
@@ -503,7 +509,6 @@ int64_t vtfs_http_call(
 
 - Готовность запустить тесты по просьбе преподавателя
 
-- За хранилище данных в RAM вы сможете получить не более 10 баллов за ЛР, а за реализацию с сервером до 15 баллов.
 
 [1]: https://en.wikipedia.org/wiki/Monolithic_kernel
 [2]: https://en.wikipedia.org/wiki/Ext4
