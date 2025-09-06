@@ -40,12 +40,17 @@ struct io {
   std::function<int(int fd)> fsync;
 };
 
-template <class A>
-void robust_do(A action, int fd, auto buf, size_t count) {
+template <class A, class T>
+void robust_do(A action, int fd, T* buf, size_t count) {
+  using B = std::conditional_t<
+      std::is_const_v<std::remove_pointer_t<T>>,
+      const char,
+      char>;
+
   size_t total = 0;
   while (total < count) {
     const size_t tail_count = count - total;
-    auto* tail_buf = reinterpret_cast<char*>(buf) + total;
+    B* tail_buf = reinterpret_cast<B*>(buf) + total;  // NOLINT
     const ssize_t local = action(fd, tail_buf, tail_count);
     if (local < 0) {
       throw vt::file_exception(local)
