@@ -44,7 +44,9 @@ template <class A>
 void robust_do(A action, int fd, auto buf, size_t count) {
   size_t total = 0;
   while (total < count) {
-    const ssize_t local = action(fd, buf, count);
+    const size_t tail_count = count - total;
+    auto* tail_buf = reinterpret_cast<char*>(buf) + total;
+    const ssize_t local = action(fd, tail_buf, tail_count);
     if (local < 0) {
       throw vt::file_exception(local)
           << "failed to read/write " << count << " bytes from file with fd "
