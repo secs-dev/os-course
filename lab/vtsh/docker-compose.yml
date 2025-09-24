@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_UID: ${UID:-1000}
+        USER_GID: ${GID:-1000}
+    image: vtsh-dev:latest
+    container_name: vtsh-dev
+    volumes:
+      - .:/workspace:delegated
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
+    environment:
+      - PYTHONPATH=/workspace/test
+    command: tail -f /dev/null
+
+
