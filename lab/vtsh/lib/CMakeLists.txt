@@ -9,3 +9,4 @@ target_include_directories(
     PUBLIC
     .
 )
+target_sources(vtsh PRIVATE myshell.c)
