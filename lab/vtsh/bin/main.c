@@ -50,8 +50,6 @@ int main() {
       }
       perror("execvp");
       exit(1);
-    } else {
-      wait(NULL);
     }
     free(args);
   }
