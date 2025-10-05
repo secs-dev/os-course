@@ -1,8 +1,8 @@
-#include <libc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "vtsh.h"
 
@@ -50,7 +50,7 @@ char* replace_all_chars(const char* src, const char* repl) {
 int main() {
   char* buf = NULL;
   size_t cup = 2000;
-  while (TRUE) {
+  while (10000) {
     printf("%s", vtsh_prompt());
     size_t len = getline(&buf, &cup, stdin);
 
