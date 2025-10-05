@@ -23,30 +23,6 @@ char** parse_args(char* line, size_t len) {
   return args;
 }
 
-char* replace_all_chars(const char* src, const char* repl) {
-  if (!src || !repl)
-    return NULL;
-
-  size_t len_src = strlen(src);
-  size_t len_repl = strlen(repl);
-
-  // Размер результата = длина исходной строки * длина замены + 1 для '\0'
-  size_t len_result = len_src * len_repl + 1;
-
-  char* result = malloc(len_result);
-  if (!result)
-    return NULL;  // Проверка на успешное выделение памяти
-
-  result[0] = '\0';  // Инициализируем пустую строку
-
-  // Конкатенация замены len_src раз
-  for (size_t i = 0; i < len_src; i++) {
-    strcat(result, repl);
-  }
-
-  return result;
-}
-
 int main() {
   char* buf = NULL;
   size_t cup = 2000;
@@ -62,7 +38,7 @@ int main() {
 
     char** args = parse_args(buf, len);
     for (size_t i = 0; args[i] != NULL; i++) {
-      printf("%s 222 ", args[i]);
+      // printf("%s 222 ", args[i]);
     }
     // printf("\n");
 
