@@ -126,7 +126,6 @@ int redirection(char** file_in, char** file_out) {
       return -1;
     }
     int fd = fileno(file);
-    int saved_stdout = dup(STDIN_FILENO);
 
     dup2(fd, STDIN_FILENO);
     fclose(file);
@@ -138,7 +137,6 @@ int redirection(char** file_in, char** file_out) {
       return -1;
     }
     int fd = fileno(file);
-    int saved_stdout = dup(STDOUT_FILENO);
 
     dup2(fd, STDOUT_FILENO);
     fclose(file);

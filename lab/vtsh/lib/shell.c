@@ -31,10 +31,6 @@ int run(char** buf, size_t* len) {
 
   // printf("%s %s", file_in, file_out);
 
-  if (res_args == NULL) {
-    return 0;
-  }
-
   // for (size_t i = 0; res_args[i] != NULL; i++) {
   //   printf("%s 222 ", args[i]);
   // }
