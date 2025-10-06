@@ -15,3 +15,5 @@ Checks: |
     readability-*
 WarningsAsErrors: '*'
 FormatStyle: file
+Diagnostics:
+    Suppress: 'cert-msc51-cpp'
