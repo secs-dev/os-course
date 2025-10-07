@@ -13,7 +13,6 @@ int main() {
   setvbuf(stdin, NULL, _IONBF, 0);
   while (1) {
     printf("%s", vtsh_prompt());
-    // fflush(stdout);
     size_t len = getline(&buf, &cup, stdin);
 
     if (len == -1) {
