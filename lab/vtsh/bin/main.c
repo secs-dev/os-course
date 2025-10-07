@@ -16,8 +16,6 @@ int main() {
     fflush(stdout);
     size_t len = getline(&buf, &cup, stdin);
 
-    // printf("%s111\n", buf);
-
     if (len == -1) {
       break;
     } else if (strcmp(buf, "./shell\n") == 0) {
