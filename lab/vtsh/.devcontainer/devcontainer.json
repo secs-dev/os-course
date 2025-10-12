@@ -1,6 +1,9 @@
 {
   "name": "vtsh-linux",
-  "dockerComposeFile": "../docker-compose.yml",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
   "service": "dev",
   "workspaceFolder": "/workspace",
   "runArgs": [
@@ -9,29 +12,36 @@
     "seccomp=unconfined"
   ],
   "remoteUser": "root",
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"
+  ],
   "features": {},
-  "postCreateCommand": "bash -lc 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug'",
+  "postCreateCommand": "rm -rf build && bash -lc \"cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS='-O0 -g -gdwarf-4 -fno-omit-frame-pointer'\"",
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-vscode.cpptools",
         "ms-vscode.cmake-tools",
-        "twxs.cmake",
-        "ms-python.python",
-        "ms-python.vscode-pylance"
+        "llvm-vs-code-extensions.vscode-clangd",
+        "vadimcn.vscode-lldb",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.makefile-tools",
+        "ms-vscode.hexeditor"
       ],
       "settings": {
         "cmake.sourceDirectory": "/workspace",
         "cmake.buildDirectory": "/workspace/build",
         "cmake.generator": "Ninja",
-        "C_Cpp.default.compilerPath": "/usr/bin/gcc",
+        "C_Cpp.default.compilerPath": "/usr/bin/clang",
         "C_Cpp.default.includePath": [
           "/usr/include",
           "/usr/include/x86_64-linux-gnu"
-        ]
+        ],
+        "lldb.executable": "/usr/bin/lldb",
+        "lldb.launch.expressions": "native",
+        "lldb.launch.console": "integratedTerminal",
+        "lldb.launch.externalConsole": false
       }
     }
   }
 }
-
-
