@@ -1,4 +1,6 @@
+#include <errno.h>
 #include <sched.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,25 +44,9 @@
 //   }
 // }
 
-int find_and_do_or(char** args) {
-  for (size_t i = 0; args[i] != NULL; i++) {
-    if (strcmp(args[i], "||") == 0) {
-      if (i == 0 || args[i + 1] == NULL) {
-        return -1;
-      }
-      return args[i - 1] || args[i + 1];
-    } else if (strstr(args[i], "||")) {
-      char* arg1 = args[i];
-      char* arg2 = NULL;
-      arg2 = strstr(arg1, "||");
-      if (strcmp(arg1, arg2) != 0 && (strlen(arg2) > 2)) {
-        arg2 += strlen("||");
-        return arg1 || arg2;
-      }
-      return -1;
-    }
-  }
-  return -2;
+char* contains_or(char* buf) {
+  char* contains = strstr(buf, "||");
+  return contains;
 }
 
 int init() {
@@ -68,45 +54,69 @@ int init() {
 }
 
 int run(char** buf, size_t* len) {
-  time_t start_time;
-  time(&start_time);
   char* file_in = 0;
   char* file_out = 0;
   char* del = "\n\t \v\f";
+  char* command1 = *buf;
+  size_t comm1_len = *len;
+  char* command2 = NULL;
+  size_t comm2_len = 0;
+  int count = 0;
 
-  // todo - shell_or
+  char* shell_or = *buf;
+  while (shell_or != NULL) {
+    time_t start_time;
+    time(&start_time);
+    count++;
 
-  char** args = parse_args(*buf, *len, DEL);
-
-  int res = find_and_do_or(args);
-  if (res == -1) {
-    printf("Syntax error with ||\n");
-    free(args);
-    return 0;
-  } else if (res == -2) {
-  } else {
-    printf("%d\n", res);
-    free(args);
-    return 0;
-  }
-
-  pid_t pid = fork();
-  if (pid == 0) {
-    int res = execvp(args[0], args);
-    if (res == -1) {
-      printf("Command not found\n");
+    if (count > 1) {
+      command2 = command2 + 2;
+      comm2_len -= 2;
+      command1 = command2;
+      comm1_len = comm2_len;
     }
-    perror("execvp");
-    exit(1);
-  } else if (pid > 0) {
-    int status;
-    waitpid(pid, &status, 0);
-  }
-  free(args);
 
-  time_t finish_time;
-  time(&finish_time);
-  time_t exec_time = finish_time - start_time;
-  printf("Время выполнения команды %ld с\n", exec_time);
+    // todo - shell_or
+    shell_or = contains_or(command1);
+
+    if (shell_or != NULL) {
+      command2 = shell_or;
+      comm2_len = comm1_len - (command2 - command1);
+      comm1_len = command2 - command1;
+      char new_comm1[comm1_len];
+      strncpy(new_comm1, command1, comm1_len);
+      command1 = new_comm1;
+      *(command1 + comm1_len) = '\0';
+    }
+
+    char** args = parse_args(command1, comm1_len, DEL);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+      int res = execvp(args[0], args);
+      if (res == -1) {
+        printf("Command not found\n");
+        // printf("%s\n", strerror(errno)); ?????
+      } else {
+        exit(0);
+      }
+      exit(1);
+    } else if (pid > 0) {
+      int status;
+      waitpid(pid, &status, 0);
+      if (WIFEXITED(status)) {
+        int code = WEXITSTATUS(status);
+        if (code == 0) {
+          shell_or = NULL;
+        }
+      }
+    }
+    free(args);
+
+    time_t finish_time;
+    time(&finish_time);
+    time_t exec_time = finish_time - start_time;
+    fprintf(stderr, "Время выполнения команды %ld с\n", exec_time);
+  }
   return 0;
 }

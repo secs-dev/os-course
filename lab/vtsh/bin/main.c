@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,22 +12,18 @@ int main() {
   char* buf = NULL;
   size_t cup = 2000;
   setvbuf(stdin, NULL, _IONBF, 0);
-  while (1) {
+  while (true) {
     printf("%s", vtsh_prompt());
     size_t len = getline(&buf, &cup, stdin);
 
     if (len == -1) {
-      free(buf);
       break;
     } else if (strcmp(buf, "./shell\n") == 0) {
       init();
       continue;
     }
 
-    int res = run(&buf, &len);
-    if (res != 0) {
-      break;
-    }
+    run(&buf, &len);
   }
   return 0;
 }
