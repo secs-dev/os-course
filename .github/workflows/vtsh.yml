@@ -17,13 +17,18 @@ jobs:
           - Release
     runs-on: ubuntu-latest
     container:
-      image: silkeh/clang:latest
+      image: ubuntu:24.04
     defaults:
       run:
         working-directory: ./lab/vtsh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y clang clang-tidy clang-format cmake make python3 python3-pip git
 
       - name: Clang Format
         run: |

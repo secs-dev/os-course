@@ -1,4 +1,4 @@
-FROM silkeh/clang:latest
+FROM ubuntu:24.04
 
 # Установка только необходимых утилит для разработки
 RUN apt-get update && apt-get install -y \
@@ -12,8 +12,6 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     ninja-build \
-    
-    
     lldb \
     
     clang-format \
