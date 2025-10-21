@@ -381,7 +381,52 @@ bool direct_random_read(
     fprintf(stderr, "pread failed: %s\n", strerror(errno));
   } else {
     printf("Read %zd bytes from offset %ld\n", n, (long)offset);
+    return false;
   }
+  return true;
+}
+
+bool direct_sequense_write(
+    int file_descr, void** buf, long block_size, off_t offset
+) {
+  random_bytes(*buf, block_size);
+  ssize_t n = pwrite(file_descr, *buf, block_size, offset);
+  if (n < 0) {
+    fprintf(stderr, "pwrite failed: %s\n", strerror(errno));
+    return false;
+  } else {
+    printf("Write %zd bytes\n", n);
+    return true;
+  }
+}
+
+bool direct_random_write(
+    int file_descr, void** buf, long block_size, int range_min, int range_max
+) {
+  struct stat st;
+  if (fstat(file_descr, &st) != 0) {
+    perror("fstat");
+    return false;
+  }
+  off_t fsize = st.st_size;
+
+  long max = fsize / block_size;
+  off_t offset;
+
+  if (range_max == 0 && range_min == 0) {
+    offset = (rand() % max) * block_size;
+  } else {
+    offset = (range_min + rand() % range_max) * block_size;
+  }
+
+  random_bytes(*buf, block_size);
+  ssize_t n = pwrite(file_descr, *buf, block_size, offset);
+  if (n < 0) {
+    fprintf(stderr, "pwrite failed: %s\n", strerror(errno));
+  } else {
+    printf("Write %zd bytes\n", n);
+  }
+  return true;
 }
 
 bool rw_direct(int file_descr, struct params* params) {
@@ -397,8 +442,9 @@ bool rw_direct(int file_descr, struct params* params) {
     return false;
   }
 
+  off_t offset;
+
   if (params->rw == 'r') {
-    off_t offset;
     if (params->range_min == 0 && params->range_max == 0) {
       if (params->type == 's') {
         for (long i = 0; i < params->block_count; i++) {
@@ -432,15 +478,39 @@ bool rw_direct(int file_descr, struct params* params) {
     if (params->range_min == 0 && params->range_max == 0) {
       if (params->type == 's') {
         for (long i = 0; i < params->block_count; i++) {
-          bool res = sequense_write(file_descr, params->block_size);
+          offset = i * params->block_size;
+          bool res = direct_sequense_write(
+              file_descr, &buf, params->block_size, offset
+          );
           if (!res)
             return false;
         }
       } else {
-        return false;
+        for (long i = 0; i < params->block_count; i++) {
+          direct_random_write(file_descr, &buf, params->block_size, 0, 0);
+        }
       }
     } else {
-      return false;
+      if (!check_range_direct(params))
+        return false;
+      off_t min =
+          ((params->range_min / params->block_size) + 1) * params->block_size;
+      if (params->type == 's') {
+        for (long i = 0; i < params->block_count; i++) {
+          offset = min + i * params->block_size;
+          bool res = direct_sequense_write(
+              file_descr, &buf, params->block_size, offset
+          );
+          if (!res)
+            return false;
+        }
+      } else {
+        for (long i = 0; i < params->block_count; i++) {
+          int min = (params->range_min / params->block_size) + 1;
+          int max = params->range_max / params->block_size;
+          direct_random_write(file_descr, &buf, params->block_size, 0, 0);
+        }
+      }
     }
   }
 
