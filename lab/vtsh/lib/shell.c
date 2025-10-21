@@ -13,36 +13,53 @@
 
 #define DEL "\n\t \v\f"
 
-// struct exec_args {
-//   char* file;
-//   char** args
-// };
+struct exec_args {
+  char* file;
+  char** args;
+};
 
-// int exec_call(void* args) {
-//   struct exec_args* res_args = (struct exec_args*)args;
-//   int res = execvp(res_args->file, res_args->args);
-//   if (res == -1) {
-//     return -1;
-//   }
-//   return 0;
-// }
+static int exec_call(void* arg) {
+  struct exec_args* ea = (struct exec_args*)arg;
+  execvp(ea->file, ea->args);
+  if (strcmp(strerror(errno), "No such file or directory") == 0) {
+    printf("Command not found\n");
+  } else {
+    printf("%s\n", strerror(errno));
+  }
+  exit(127);
+}
 
-// int clone_try(char** args){
-//   const int STACK_SIZE = 1024 * 1024;
-//   void* stack = malloc(STACK_SIZE);
-//   if (!stack) {
-//     perror("malloc");
-//     exit(1);
-//   }
+int clone_try(char** args, char** shell_or) {
+  const int STACK_SIZE = 1024 * 1024;
+  void* stack = malloc(STACK_SIZE);
 
-//   struct exec_args res_args = {.file = args[0], .args = args};
+  struct exec_args res_args = {.file = args[0], .args = args};
 
-//   pid_t pid = clone(exec_call, (char*)stack + STACK_SIZE, SIGCHLD, res_args);
-//   if (pid == -1) {
-//     perror("clone");
-//     exit(1);
-//   }
-// }
+  char* stack_top = (char*)stack + STACK_SIZE;
+  pid_t pid = clone(exec_call, stack_top, SIGCHLD, &res_args);
+  if (pid == -1) {
+    perror("clone");
+    free(stack);
+    return 1;
+  }
+
+  int status = 0;
+  if (waitpid(pid, &status, 0) == -1) {
+    perror("waitpid");
+    free(stack);
+    return 1;
+  }
+
+  free(stack);
+
+  if (WIFEXITED(status)) {
+    int code = WEXITSTATUS(status);
+    if (code == 0) {
+      *shell_or = NULL;
+    }
+    return code;
+  }
+}
 
 char* contains_or(char* buf) {
   char* contains = strstr(buf, "||");
@@ -76,7 +93,6 @@ int run(char** buf, size_t* len) {
       comm1_len = comm2_len;
     }
 
-    // todo - shell_or
     shell_or = contains_or(command1);
 
     if (shell_or != NULL) {
@@ -91,26 +107,32 @@ int run(char** buf, size_t* len) {
 
     char** args = parse_args(command1, comm1_len, DEL);
 
-    pid_t pid = fork();
-    if (pid == 0) {
-      int res = execvp(args[0], args);
-      if (res == -1) {
-        printf("Command not found\n");
-        // printf("%s\n", strerror(errno)); ?????
-      } else {
-        exit(0);
-      }
-      exit(1);
-    } else if (pid > 0) {
-      int status;
-      waitpid(pid, &status, 0);
-      if (WIFEXITED(status)) {
-        int code = WEXITSTATUS(status);
-        if (code == 0) {
-          shell_or = NULL;
-        }
-      }
-    }
+    // pid_t pid = fork();
+    // if (pid == 0) {
+    //   int res = execvp(args[0], args);
+    //   if (res == -1) {
+    //     if (strcmp(strerror(errno), "No such file or directory") == 0) {
+    //       printf("Command not found\n");
+    //     } else {
+    //       printf("%s\n", strerror(errno));
+    //     }
+    //   } else {
+    //     exit(0);
+    //   }
+    //   exit(1);
+    // } else if (pid > 0) {
+    //   int status;
+    //   waitpid(pid, &status, 0);
+    //   if (WIFEXITED(status)) {
+    //     int code = WEXITSTATUS(status);
+    //     if (code == 0) {
+    //       shell_or = NULL;
+    //     }
+    //   }
+    // }
+
+    clone_try(args, &shell_or);
+
     free(args);
 
     time_t finish_time;
