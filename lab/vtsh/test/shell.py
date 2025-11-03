@@ -15,4 +15,4 @@ class Shell:
         )
 
         stdout, _ = shell.communicate(cmd + "\n", timeout=2)
-        return shell.returncode, stdout.replace("vtsh> ", "").strip()
+        return shell.returncode, stdout.replace("cshell$ ", "").strip()

@@ -7,7 +7,7 @@ from shell import Shell
 
 class BaseShellTest(TestCase):
     def setUp(self):
-        self.shell = Shell("../build/bin/vtsh")
+        self.shell = Shell("./build/bin/vtsh")
         self.test_files = set()
 
     def tearDown(self):
