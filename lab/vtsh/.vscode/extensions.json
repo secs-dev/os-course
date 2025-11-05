@@ -1,0 +1,25 @@
+    {
+      "recommendations": [
+        "ms-vscode.cmake-tools", // CMake support (docs, runners)
+
+        /**
+         * C/C++ extensions group alternative 1:
+         */
+        "llvm-vs-code-extensions.vscode-clangd", // LSP
+        "vadimcn.vscode-lldb", // debugger extension for clang
+        /* or official lldb extension */
+        // "llvm-vs-code-extensions.lldb-dap",
+
+        /**
+         * C/C++ extensions group alternative 2:
+         */
+        // "ms-vscode.cpptools", // C/C++ extension pack with debugger & LSP
+
+        /**
+         * Optional extensions:
+         */
+        // "usernamehw.errorlens", // For inlineerror displaying
+        // "ms-vscode-remote.remote-wsl", // For WSL support
+        // "ms-vscode-remote.remote-containers", // For devcontainer support
+      ]
+    }

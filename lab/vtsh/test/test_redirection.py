@@ -1,6 +1,12 @@
+import unittest
+
 from base_test import BaseShellTest
 
+REQUIRED_REDIRECTION_FUNCTIONALITY = False
 
+@unittest.skipIf(not REQUIRED_REDIRECTION_FUNCTIONALITY, 
+                 ("Redirection functionality is not required in the task. "
+                  "This functionality is for an additional task."))
 class TestShellRedirection(BaseShellTest):
     def test_simple_redirection(self):
         self.add_test_file("aaa")
