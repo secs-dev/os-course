@@ -13,22 +13,21 @@
 #define CRC_INIT_VALUE 0xFFFFFFFFU
 #define CRC_MASK 0xFFU
 #define MIN_FRAGMENT_LENGTH 100
-#define ASCII_START 32  // пробел
+#define ASCII_START 32  
 #define ASCII_PRINTABLE_COUNT 95
 #define BYTE_SHIFT 8U
 #define BASE_10 10
 
-// const NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+// const NOLINTNEXTLINE
 static uint32_t crc_table[CRC_TABLE_SIZE];
 
 static void init_crc_table() {
   uint32_t polynomial = CRC_POLYNOMIAL;
   for (int i = 0; i < CRC_TABLE_SIZE; i++) {
-    // подаю байт i на вход и 8 раз прогоняю
-    // сдвиг/полином
+    // подаем байт i на вход и 8 раз прогоняю
     uint32_t crc = (uint32_t)i;
     for (int j = 0; j < CRC_BITS_PER_BYTE; j++) {
-      if (crc & 1U) {
+      if (crc & 1U) {  //
         // если младший бит 1, то после сдвига нужно применить полином
         crc = (crc >> 1U) ^ polynomial;
       } else {
@@ -51,7 +50,7 @@ static uint32_t calculate_crc32(const char* data, size_t length) {
     // 3) сдвигаем crc на байт и подставляем предрасчитанный остаток
     crc = (crc >> BYTE_SHIFT) ^ crc_table[(crc ^ byte) & CRC_MASK];
   }
-  // финальная инверсия по стандарту CRC-32 
+  // финальная инверсия по стандарту CRC-32
   return crc ^ CRC_INIT_VALUE;
 }
 
