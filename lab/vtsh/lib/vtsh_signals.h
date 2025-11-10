@@ -1,5 +1,3 @@
 #pragma once
 
-void vtsh_loop(void);
-
 void vtsh_setup_signal_handlers(void);
