@@ -1,0 +1,25 @@
+name: Test VT Kernel Module
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'lab/vtkm/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./lab/vtkm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clang Format
+        run: |
+          find . -path ./build -prune -o \
+            \( -iname '*.c' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.hpp' \) \
+            -exec clang-format --style=file --dry-run --verbose {} \;
+      - name: Build
+        run: make
