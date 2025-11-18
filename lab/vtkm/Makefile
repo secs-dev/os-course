@@ -1,4 +1,4 @@
-obj-m += source/vtkm.o 
+obj-m += src/vtkm.o 
 
 PWD := $(CURDIR) 
 KDIR = /lib/modules/`uname -r`/build
