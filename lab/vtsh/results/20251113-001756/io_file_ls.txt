@@ -1,0 +1,1 @@
+-rw-r--r-- 1 root root 100M Nov 13 00:19 results/20251113-001756/testfile.txt

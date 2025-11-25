@@ -1,0 +1,15 @@
+Run ID: 20251113-001756
+Kernel:
+Linux LAPTOP-S51S7N90 5.15.167.4-microsoft-standard-WSL2 #1 SMP Tue Nov 5 00:21:55 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux
+CPU:
+CPU(s):                               8
+On-line CPU(s) list:                  0-7
+Model name:                           AMD Ryzen 5 3500U with Radeon Vega Mobile Gfx
+Thread(s) per core:                   2
+Core(s) per socket:                   4
+Socket(s):                            1
+Disk:
+NAME TYPE SIZE MODEL
+sda disk 388.4M Virtual Disk
+sdb disk 2G Virtual Disk
+sdc disk 1T Virtual Disk
