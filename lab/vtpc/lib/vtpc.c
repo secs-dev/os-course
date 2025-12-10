@@ -282,30 +282,54 @@ static int cache_read_page(int fd, off_t offset, unsigned char *buffer) {
     if (page) {
         /* Страница в кэше - копируем данные */
         memcpy(buffer, page->data, PAGE_SIZE);
-        cache_touch(page);  // Обновляем LRU
-        cache.hits++;       // Попадание в кэш
+        cache_touch(page);  /* Обновляем LRU */
+        cache.hits++;       /* Попадание в кэш */
         pthread_mutex_unlock(&cache.lock);
         return 1;  /* Cache hit */
     }
     
     pthread_mutex_unlock(&cache.lock);
     
-    /* Страницы нет в кэше - читаем с диска */
-    /* ВАЖНО: fd уже открыт с O_DIRECT в vtpc_open */
-    ssize_t bytes_read = pread(fd, buffer, PAGE_SIZE, page_offset);
-    if (bytes_read < 0) return -1;
+    /* Определяем физический размер файла на данный момент */
+    off_t current_size = lseek(fd, 0, SEEK_END);
+    off_t saved_pos = lseek(fd, 0, SEEK_CUR); /* Сохраняем текущую позицию */
     
-    /* Если прочитали меньше страницы, дополняем нулями */
-    if (bytes_read < PAGE_SIZE) {
-        memset(buffer + bytes_read, 0, PAGE_SIZE - bytes_read);
+    /* Вычисляем, сколько байтов можно прочитать для этой страницы */
+    size_t bytes_to_read = PAGE_SIZE;
+    if (page_offset >= current_size) {
+        /* За пределами файла - заполняем нулями */
+        memset(buffer, 0, PAGE_SIZE);
+    } else if (page_offset + PAGE_SIZE > current_size) {
+        /* Частично за пределами файла */
+        bytes_to_read = current_size - page_offset;
+        ssize_t bytes_read = pread(fd, buffer, bytes_to_read, page_offset);
+        if (bytes_read < 0) {
+            lseek(fd, saved_pos, SEEK_SET); /* Восстанавливаем позицию */
+            return -1;  /* Ошибка чтения */
+        }
+        /* Дополняем нулями остаток страницы */
+        if (bytes_read < PAGE_SIZE) {
+            memset(buffer + bytes_read, 0, PAGE_SIZE - bytes_read);
+        }
+    } else {
+        /* Полностью внутри файла */
+        ssize_t bytes_read = pread(fd, buffer, PAGE_SIZE, page_offset);
+        if (bytes_read < 0) {
+            lseek(fd, saved_pos, SEEK_SET); /* Восстанавливаем позицию */
+            return -1;  /* Ошибка чтения */
+        }
+        if (bytes_read < PAGE_SIZE) {
+            memset(buffer + bytes_read, 0, PAGE_SIZE - bytes_read);
+        }
     }
     
+    lseek(fd, saved_pos, SEEK_SET); /* Восстанавливаем позицию */
+    
     /* Сохраняем прочитанную страницу в кэш */
-    cache_put(fd, page_number, buffer, 0);  // is_dirty = 0 (только что с диска)
+    cache_put(fd, page_number, buffer, 0);  /* is_dirty = 0 */
     
     return 0;  /* Cache miss */
 }
-
 /* ==================== ТАБЛИЦА ОТКРЫТЫХ ФАЙЛОВ ==================== */
 
 /* Структура для отслеживания открытых файлов */
@@ -313,6 +337,7 @@ typedef struct {
     int is_used;      /* Флаг использования */
     int real_fd;      /* Реальный дескриптор файла (от open) */
     off_t position;   /* Текущая позиция в файле (как у lseek) */
+    off_t logical_size; /* Логический размер файла (с учетом незаписанных данных) */
     char path[256];   /* Путь к файлу */
 } FileEntry;
 
@@ -334,8 +359,20 @@ static void init_file_entry(int fd, int real_fd, const char *path) {
         open_files[fd].is_used = 1;
         open_files[fd].real_fd = real_fd;
         open_files[fd].position = 0;
+        
+        /* СОХРАНЯЕМ текущую позицию */
+        off_t old_pos = lseek(real_fd, 0, SEEK_CUR);
+        
+        /* Получаем текущий физический размер файла */
+        off_t current_size = lseek(real_fd, 0, SEEK_END);
+        open_files[fd].logical_size = (current_size > 0) ? current_size : 0;
+        
+        /* ВОССТАНАВЛИВАЕМ позицию */
+        lseek(real_fd, old_pos, SEEK_SET);
+        
         if (path) {
             strncpy(open_files[fd].path, path, sizeof(open_files[fd].path) - 1);
+            open_files[fd].path[sizeof(open_files[fd].path) - 1] = '\0';
         }
     }
 }
@@ -343,20 +380,15 @@ static void init_file_entry(int fd, int real_fd, const char *path) {
 /* ==================== ОСНОВНЫЕ API ФУНКЦИИ ==================== */
 
 /* Открытие файла с использованием LRU кэша */
-int vtpc_open(const char *path) {
+int vtpc_open(const char *path, int flags, mode_t mode) {
     if (!cache_initialized) {
         cache_init();  // Инициализируем кэш при первом вызове
     }
     
-    /* Открываем файл с O_DIRECT для обхода кэша ОС */
-    int real_fd = open(path, O_RDWR | O_DIRECT);
+    /* Открываем файл с переданными флагами и режимом */
+    int real_fd = open(path, flags, mode);
     if (real_fd < 0) {
-        /* Если O_DIRECT не поддерживается, открываем обычным способом */
-        real_fd = open(path, O_RDWR);
-        if (real_fd < 0) {
-            return -1;
-        }
-        printf("[VTPC] Warning: O_DIRECT not supported for %s\n", path);
+        return -1;
     }
     
     /* Ищем свободный слот в таблице файлов */
@@ -415,33 +447,41 @@ ssize_t vtpc_read(int fd, void *buf, size_t count) {
     unsigned char *buffer = (unsigned char *)buf;
     ssize_t total_read = 0;
     
-    /* Определяем размер файла */
-    off_t file_size = lseek(real_fd, 0, SEEK_END);
-    lseek(real_fd, current_pos, SEEK_SET);  /* Возвращаем позицию */
+    /* Используем логический размер файла */
+    off_t file_size = file->logical_size;
+    
+    printf("[DEBUG] vtpc_read: fd=%d, pos=%ld, count=%zu, logical_size=%ld\n", 
+           fd, (long)current_pos, count, (long)file_size);
     
     if (current_pos >= file_size) {
-        return 0; /* Конец файла */
+        printf("[DEBUG] EOF: current_pos=%ld >= file_size=%ld\n", 
+               (long)current_pos, (long)file_size);
+        return 0;  /* Конец файла */
     }
     
-    /* Ограничиваем чтение размером файла */
+    /* Ограничиваем чтение доступным размером файла */
     if (count > file_size - current_pos) {
+        printf("[DEBUG] Reducing count: %zu -> %zu\n", count, file_size - current_pos);
         count = file_size - current_pos;
     }
     
-    /* Выровненный буфер для чтения целых страниц (требование O_DIRECT) */
-    unsigned char page_buffer[PAGE_SIZE] __attribute__((aligned(4096)));
-    
     /* Читаем постранично */
+    unsigned char page_buffer[PAGE_SIZE];
+    
     while (count > 0) {
         off_t page_number = current_pos / PAGE_SIZE;
         size_t offset_in_page = current_pos % PAGE_SIZE;
         size_t bytes_in_page = PAGE_SIZE - offset_in_page;
         size_t bytes_to_read = (count < bytes_in_page) ? count : bytes_in_page;
         
-        /* Читаем всю страницу (из кэша или с диска) */
+        printf("[DEBUG] Reading: page=%ld, offset_in_page=%zu, bytes_to_read=%zu\n",
+               (long)page_number, offset_in_page, bytes_to_read);
+        
+        /* Читаем страницу (из кэша или с диска) */
         int cache_result = cache_read_page(real_fd, current_pos, page_buffer);
         if (cache_result < 0) {
             /* Ошибка чтения */
+            printf("[DEBUG] cache_read_page error: %d\n", cache_result);
             if (total_read == 0) return -1;
             break;
         }
@@ -454,9 +494,13 @@ ssize_t vtpc_read(int fd, void *buf, size_t count) {
         current_pos += bytes_to_read;
         total_read += bytes_to_read;
         count -= bytes_to_read;
+        
+        printf("[DEBUG] Progress: total_read=%ld, remaining=%zu\n",
+               (long)total_read, count);
     }
     
     file->position = current_pos;
+    printf("[DEBUG] vtpc_read completed: total_read=%ld\n", (long)total_read);
     return total_read;
 }
 
@@ -473,16 +517,17 @@ ssize_t vtpc_write(int fd, const void *buf, size_t count) {
     ssize_t total_written = 0;
     
     /* Выровненный буфер для работы со страницами */
-    unsigned char page_buffer[PAGE_SIZE] __attribute__((aligned(4096)));
+    unsigned char page_buffer[PAGE_SIZE];
     
     /* Пишем постранично */
     while (count > 0) {
         off_t page_number = current_pos / PAGE_SIZE;
+        off_t page_offset = page_number * PAGE_SIZE;
         size_t offset_in_page = current_pos % PAGE_SIZE;
         size_t bytes_in_page = PAGE_SIZE - offset_in_page;
         size_t bytes_to_write = (count < bytes_in_page) ? count : bytes_in_page;
         
-        /* Читаем текущую страницу (чтобы не потерять остальные данные на ней) */
+        /* Читаем текущую страницу (если нужно) */
         int cache_result = cache_read_page(real_fd, current_pos, page_buffer);
         if (cache_result < 0) {
             /* Ошибка чтения */
@@ -493,14 +538,26 @@ ssize_t vtpc_write(int fd, const void *buf, size_t count) {
         /* Модифицируем страницу новыми данными */
         memcpy(page_buffer + offset_in_page, buffer, bytes_to_write);
         
-        /* Сохраняем модифицированную страницу в кэш как "грязную" */
-        cache_put(real_fd, page_number, page_buffer, 1); /* is_dirty = 1 */
+        /* ЗАПИСЫВАЕМ ТОЛЬКО НУЖНЫЕ БАЙТЫ НА ДИСК (без выравнивания) */
+        ssize_t written = pwrite(real_fd, buffer, bytes_to_write, current_pos);
+        if (written != bytes_to_write) {
+            if (total_written == 0) return -1;
+            break;
+        }
+        
+        /* Сохраняем страницу в кэш как чистую (так как уже записали на диск) */
+        cache_put(real_fd, page_number, page_buffer, 0); /* is_dirty = 0 */
         
         /* Обновляем счётчики */
         buffer += bytes_to_write;
         current_pos += bytes_to_write;
         total_written += bytes_to_write;
         count -= bytes_to_write;
+    }
+    
+    /* Обновляем логический размер файла */
+    if (current_pos > file->logical_size) {
+        file->logical_size = current_pos;
     }
     
     file->position = current_pos;
@@ -562,6 +619,7 @@ int vtpc_fsync(int fd) {
     for (int i = 0; i < cache.capacity; i++) {
         CachePage *page = &cache.pages[i];
         if (page->is_valid && page->fd == real_fd && page->is_dirty) {
+            /* Записываем всю страницу на диск */
             ssize_t written = pwrite(real_fd, page->data, PAGE_SIZE, 
                                     page->page_number * PAGE_SIZE);
             if (written == PAGE_SIZE) {

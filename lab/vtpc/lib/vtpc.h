@@ -8,7 +8,7 @@
 /* Virtual Page Cache API (LRU implementation) */
 
 /* Открытие файла с использованием LRU кэша */
-int vtpc_open(const char *path);
+int vtpc_open(const char *path, int flags, mode_t mode);
 
 /* Закрытие файла и сброс кэшированных страниц */
 int vtpc_close(int fd);
