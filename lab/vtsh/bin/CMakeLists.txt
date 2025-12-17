@@ -1,25 +1,16 @@
 add_executable(
-  shell
+  vtsh
   ${CMAKE_SOURCE_DIR}/src/shell.c
 )
 
 target_include_directories(
-  shell
-  PRIVATE
-  ${CMAKE_SOURCE_DIR}/lib
-  ${CMAKE_SOURCE_DIR}/bin
-  ${CMAKE_SOURCE_DIR}/src
+  vtsh
+  PUBLIC
+  .
 )
-
-
 
 target_link_libraries(
-  shell
+  vtsh
   PRIVATE
   libvtsh
-)
-
-# Ключевое: тесты запускают ./shell из lab/vtsh/test
-set_target_properties(shell PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/test"
 )
