@@ -1,0 +1,22 @@
+# Бинарные файлы
+*.o
+*.out
+*.exe
+
+# Скомпилированные программы
+mysh
+cpu-linreg
+ema-replace-int
+
+# Временные файлы
+*.swp
+*~
+*.log
+
+# Файлы данных
+*.bin
+data.bin
+
+# Папки сборки
+build/
+dist/
