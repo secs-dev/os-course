@@ -2,11 +2,9 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
-#include <time.h>
 #include <unistd.h>
 
 #define MAX_LINE 4096
@@ -14,7 +12,7 @@
 
 static void print_prompt(void) {
     if (isatty(STDIN_FILENO)) {
-        write(STDOUT_FILENO, "$ ", 2);
+        (void)write(STDOUT_FILENO, "$ ", 2);
     }
 }
 
@@ -24,8 +22,8 @@ static int read_line_fd(char *buf, size_t cap) {
         char c;
         ssize_t r = read(STDIN_FILENO, &c, 1);
         if (r == 0) {
-            if (i == 0) return 0;
-            break;
+            if (i == 0) return 0;  // EOF and nothing read
+            break;                 // EOF after some data
         }
         if (r < 0) {
             if (errno == EINTR) continue;
@@ -43,41 +41,18 @@ static char *trim_left(char *s) {
     return s;
 }
 
-/* Встроенный cat, который читает только из stdin */
-static void builtin_cat_stdin(void) {
-    char buf[4096];
-    ssize_t n;
-    while ((n = read(STDIN_FILENO, buf, sizeof(buf))) > 0) {
-        write(STDOUT_FILENO, buf, n);
-    }
+static int is_redirect_token(const char *t) {
+    return (strcmp(t, "<") == 0) || (strcmp(t, ">") == 0);
 }
 
-static int builtin_tee_to_file(const char *path) {
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if (fd < 0) {
-        write(STDOUT_FILENO, "I/O error\n", 10);
-        return 5;
-    }
-
-    char buf[4096];
-    ssize_t n;
-    while ((n = read(STDIN_FILENO, buf, sizeof(buf))) > 0) {
-        write(STDOUT_FILENO, buf, n);
-
-        ssize_t off = 0;
-        while (off < n) {
-            ssize_t w = write(fd, buf + off, n - off);
-            if (w <= 0) break;
-            off += w;
+static int is_complex_redirect(const char *token) {
+    // token like <file or >file or >a<b (complex)
+    if (token[0] == '<' || token[0] == '>') {
+        for (int i = 1; token[i] != '\0'; i++) {
+            if (token[i] == '<' || token[i] == '>') return 1;
         }
     }
-
-    close(fd);
     return 0;
-}
-
-static int starts_with(const char *s, const char *pref) {
-    return strncmp(s, pref, strlen(pref)) == 0;
 }
 
 static int tokenize(const char *line, char *tokens[], int max_tokens) {
@@ -88,62 +63,55 @@ static int tokenize(const char *line, char *tokens[], int max_tokens) {
         while (*p == ' ' || *p == '\t') p++;
         if (*p == '\0') break;
 
-        /* Проверяем на >> */
+        // forbid >>
         if (*p == '>' && p[1] == '>') {
             if (ntok >= max_tokens - 1) break;
             char *t = malloc(3);
+            if (!t) break;
             t[0] = '>'; t[1] = '>'; t[2] = '\0';
             tokens[ntok++] = t;
             p += 2;
             continue;
         }
 
-        /* Проверяем на < или > */
+        // handle <... or >... glued forms
         if (*p == '<' || *p == '>') {
-            /* Проверяем, является ли это сложным редиректом (>lol<wut) */
             const char *start = p;
             p++;
-
-            /* Читаем до пробела или конца */
             while (*p != '\0' && *p != ' ' && *p != '\t') p++;
+            size_t len = (size_t)(p - start);
 
-            size_t len = p - start;
-
-            /* Проверяем, содержит ли строка еще один символ < или > */
-            int has_inner_redirect = 0;
+            int has_inner = 0;
             for (const char *c = start + 1; c < p; c++) {
-                if (*c == '<' || *c == '>') {
-                    has_inner_redirect = 1;
-                    break;
-                }
+                if (*c == '<' || *c == '>') { has_inner = 1; break; }
             }
 
-            if (has_inner_redirect) {
-                /* Это сложная форма типа >lol<wut - один токен */
+            if (has_inner) {
+                // complex token like >a<b => syntax error later
                 if (ntok >= max_tokens - 1) break;
                 char *t = malloc(len + 1);
+                if (!t) break;
                 memcpy(t, start, len);
                 t[len] = '\0';
                 tokens[ntok++] = t;
             } else if (len == 1) {
-                /* Одиночный символ < или > */
+                // single < or >
                 if (ntok >= max_tokens - 1) break;
                 char *t = malloc(2);
-                t[0] = *start;
-                t[1] = '\0';
+                if (!t) break;
+                t[0] = *start; t[1] = '\0';
                 tokens[ntok++] = t;
             } else {
-                /* Слитная форма <aaa или >aaa - разделяем на 2 токена */
+                // <file or >file => split into two tokens
                 if (ntok >= max_tokens - 2) break;
 
-                /* Токен редиректа */
                 char *t1 = malloc(2);
-                t1[0] = *start;
-                t1[1] = '\0';
+                if (!t1) break;
+                t1[0] = *start; t1[1] = '\0';
                 tokens[ntok++] = t1;
 
-                /* Токен имени файла */
                 char *t2 = malloc(len);
+                if (!t2) break;
                 memcpy(t2, start + 1, len - 1);
                 t2[len - 1] = '\0';
                 tokens[ntok++] = t2;
@@ -151,15 +119,16 @@ static int tokenize(const char *line, char *tokens[], int max_tokens) {
             continue;
         }
 
-        /* Обычное слово */
+        // normal word
         const char *start = p;
         while (*p != '\0' && *p != ' ' && *p != '\t') p++;
-        size_t len = p - start;
+        size_t len = (size_t)(p - start);
 
         if (len == 0) continue;
         if (ntok >= max_tokens - 1) break;
 
         char *t = malloc(len + 1);
+        if (!t) break;
         memcpy(t, start, len);
         t[len] = '\0';
         tokens[ntok++] = t;
@@ -173,134 +142,65 @@ static void free_tokens(char *tokens[], int ntok) {
     for (int i = 0; i < ntok; i++) free(tokens[i]);
 }
 
-static int is_complex_redirect(const char *token) {
-    if (token[0] == '<' || token[0] == '>') {
-        for (int i = 1; token[i] != '\0'; i++) {
-            if (token[i] == '<' || token[i] == '>') {
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-
-static int is_or_operator(const char *str) {
-    return strcmp(str, "||") == 0;
-}
-
-static int is_redirect(const char *token) {
-    return strcmp(token, "<") == 0 || strcmp(token, ">") == 0;
-}
-
-/* Ключевое исправление: shell должен выводить результат команд */
 static int run_command_line(const char *line) {
     char *tokens[MAX_TOKENS];
     int ntok = tokenize(line, tokens, MAX_TOKENS);
     if (ntok == 0) return 0;
 
+    // parse redirects and build argv
     char *argv[MAX_TOKENS];
     int argc = 0;
-    char *in_file = NULL;
-    char *out_file = NULL;
+    const char *in_file = NULL;
+    const char *out_file = NULL;
+
     int syntax_error = 0;
 
-    /* Первый проход: поиск редиректов и проверка синтаксиса */
     for (int i = 0; i < ntok; i++) {
-        if (strcmp(tokens[i], ">>") == 0) {
+        if (strcmp(tokens[i], ">>") == 0) { // unsupported
             syntax_error = 1;
             break;
         }
 
-        if (strcmp(tokens[i], "<") == 0) {
-            if (i + 1 >= ntok) {
-                syntax_error = 1;
-                break;
-            }
-            if (is_redirect(tokens[i + 1]) || strcmp(tokens[i + 1], ">>") == 0) {
-                syntax_error = 1;
-                break;
-            }
-            if (in_file != NULL) {
-                syntax_error = 1;
-                break;
-            }
-            in_file = tokens[i + 1];
-            i++;
-        } else if (strcmp(tokens[i], ">") == 0) {
-            if (i + 1 >= ntok) {
-                syntax_error = 1;
-                break;
-            }
-            if (is_redirect(tokens[i + 1]) || strcmp(tokens[i + 1], ">>") == 0) {
-                syntax_error = 1;
-                break;
-            }
-            if (out_file != NULL) {
-                syntax_error = 1;
-                break;
-            }
-            out_file = tokens[i + 1];
-            i++;
-        } else if (is_complex_redirect(tokens[i])) {
-            if (tokens[i][0] == '<') {
-                if (in_file != NULL) {
-                    syntax_error = 1;
-                    break;
-                }
-                in_file = (char *)tokens[i] + 1;
-            } else if (tokens[i][0] == '>') {
-                if (out_file != NULL) {
-                    syntax_error = 1;
-                    break;
-                }
-                out_file = (char *)tokens[i] + 1;
-            }
-        } else {
-            argv[argc++] = tokens[i];
+        if (is_complex_redirect(tokens[i])) {
+            // any >a<b etc is syntax error for this lab
+            syntax_error = 1;
+            break;
         }
-    }
 
-    if (syntax_error) {
-        write(STDOUT_FILENO, "Syntax error\n", 13);
-        free_tokens(tokens, ntok);
-        return 2;
-    }
+        if (strcmp(tokens[i], "<") == 0 || strcmp(tokens[i], ">") == 0) {
+            if (i + 1 >= ntok) { syntax_error = 1; break; }
+            if (is_redirect_token(tokens[i + 1]) || strcmp(tokens[i + 1], ">>") == 0) {
+                syntax_error = 1; break;
+            }
 
+            if (strcmp(tokens[i], "<") == 0) {
+                if (in_file != NULL) { syntax_error = 1; break; }
+                in_file = tokens[i + 1];
+            } else {
+                if (out_file != NULL) { syntax_error = 1; break; }
+                out_file = tokens[i + 1];
+            }
+            i++; // skip filename
+            continue;
+        }
+
+        argv[argc++] = tokens[i];
+    }
     argv[argc] = NULL;
 
-    /* Проверка специальных путей для I/O error */
-    if (argc > 0 && argv[0][0] == '/' &&
-        (starts_with(argv[0], "/sys/proc") || starts_with(argv[0], "/foo/bar"))) {
-        write(STDOUT_FILENO, "I/O error\n", 10);
-        free_tokens(tokens, ntok);
-        return 5;
-    }
-
-    /* Обработка cat с двумя аргументами */
-    if (argc > 0 && strcmp(argv[0], "cat") == 0 && argc > 2) {
-        write(STDOUT_FILENO, "Syntax error\n", 13);
+    if (syntax_error || argc == 0) {
+        (void)write(STDOUT_FILENO, "Syntax error\n", 13);
         free_tokens(tokens, ntok);
         return 2;
     }
 
-    /* Обработка команды типа "filename cat" (tee) */
-    if (argc == 2 && strcmp(argv[1], "cat") == 0 && in_file == NULL && out_file == NULL) {
-        int rc = builtin_tee_to_file(argv[0]);
-        free_tokens(tokens, ntok);
-        return rc;
-    }
-
-    /* cat с редиректом stdin - выполняем как внешнюю команду */
-    /* builtin cat без аргументов - тоже выполняем как внешнюю команду */
-    /* Это важно: встроенный cat должен работать ТОЛЬКО когда пользователь вводит "cat" и затем данные */
-
-    /* Открытие файлов для редиректов */
+    // open redirections in parent
     int in_fd = -1, out_fd = -1;
 
     if (in_file != NULL) {
         in_fd = open(in_file, O_RDONLY);
         if (in_fd < 0) {
-            write(STDOUT_FILENO, "I/O error\n", 10);
+            (void)write(STDOUT_FILENO, "I/O error\n", 10);
             free_tokens(tokens, ntok);
             return 5;
         }
@@ -310,17 +210,13 @@ static int run_command_line(const char *line) {
         out_fd = open(out_file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
         if (out_fd < 0) {
             if (in_fd >= 0) close(in_fd);
-            write(STDOUT_FILENO, "I/O error\n", 10);
+            (void)write(STDOUT_FILENO, "I/O error\n", 10);
             free_tokens(tokens, ntok);
             return 5;
         }
     }
 
-    /* Замер времени и запуск команды */
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-
-    pid_t pid = vfork();
+    pid_t pid = fork();
     if (pid < 0) {
         if (in_fd >= 0) close(in_fd);
         if (out_fd >= 0) close(out_fd);
@@ -329,17 +225,12 @@ static int run_command_line(const char *line) {
     }
 
     if (pid == 0) {
-        /* Дочерний процесс: настраиваем редиректы и выполняем команду */
         if (in_fd >= 0) {
             dup2(in_fd, STDIN_FILENO);
-            close(in_fd);
         }
         if (out_fd >= 0) {
             dup2(out_fd, STDOUT_FILENO);
-            close(out_fd);
         }
-
-        /* Закрываем другие файловые дескрипторы если есть */
         if (in_fd >= 0) close(in_fd);
         if (out_fd >= 0) close(out_fd);
 
@@ -347,85 +238,73 @@ static int run_command_line(const char *line) {
         _exit(127);
     }
 
-    /* Родительский процесс: ждём завершения */
-    int status = 0;
-    waitpid(pid, &status, 0);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-
-    /* Время выполнения - ТОЛЬКО в stderr */
-    long ms = (t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L;
-    dprintf(STDERR_FILENO, "time_ms=%ld\n", ms);
-
     if (in_fd >= 0) close(in_fd);
     if (out_fd >= 0) close(out_fd);
+
+    int status = 0;
+    (void)waitpid(pid, &status, 0);
 
     int rc = 0;
     if (WIFEXITED(status)) {
         rc = WEXITSTATUS(status);
         if (rc == 127) {
-            write(STDOUT_FILENO, "Command not found\n", 18);
+            (void)write(STDOUT_FILENO, "Command not found\n", 18);
         }
-    }
-
-    free_tokens(tokens, ntok);
-    return rc;
-}
-
-static int run_with_or(const char *line) {
-    char *tokens[MAX_TOKENS];
-    int ntok = tokenize(line, tokens, MAX_TOKENS);
-
-    if (ntok == 0) return 0;
-
-    /* Ищем оператор || */
-    int or_pos = -1;
-    for (int i = 0; i < ntok; i++) {
-        if (is_or_operator(tokens[i])) {
-            or_pos = i;
-            break;
-        }
-    }
-
-    if (or_pos == -1) {
-        /* Нет оператора || - выполняем как одну команду */
-        char full_line[MAX_LINE] = {0};
-        for (int i = 0; i < ntok; i++) {
-            if (i > 0) strcat(full_line, " ");
-            strcat(full_line, tokens[i]);
-        }
-        int rc = run_command_line(full_line);
         free_tokens(tokens, ntok);
         return rc;
     }
 
-    /* Разделяем на левую и правую части */
+    free_tokens(tokens, ntok);
+    return 1;
+}
+
+static int is_or_operator(const char *s) {
+    return strcmp(s, "||") == 0;
+}
+
+static int run_with_or(const char *line) {
+    // tokenize once to find ||
+    char *tokens[MAX_TOKENS];
+    int ntok = tokenize(line, tokens, MAX_TOKENS);
+    if (ntok == 0) return 0;
+
+    int or_pos = -1;
+    for (int i = 0; i < ntok; i++) {
+        if (is_or_operator(tokens[i])) { or_pos = i; break; }
+    }
+
+    if (or_pos == -1) {
+        // run original line
+        free_tokens(tokens, ntok);
+        return run_command_line(line);
+    }
+
+    // build left/right strings
     char left[MAX_LINE] = {0};
     char right[MAX_LINE] = {0};
 
     for (int i = 0; i < or_pos; i++) {
-        if (i > 0) strcat(left, " ");
-        strcat(left, tokens[i]);
+        if (i > 0) strncat(left, " ", sizeof(left) - strlen(left) - 1);
+        strncat(left, tokens[i], sizeof(left) - strlen(left) - 1);
     }
-
     for (int i = or_pos + 1; i < ntok; i++) {
-        if (i > or_pos + 1) strcat(right, " ");
-        strcat(right, tokens[i]);
+        if (i > or_pos + 1) strncat(right, " ", sizeof(right) - strlen(right) - 1);
+        strncat(right, tokens[i], sizeof(right) - strlen(right) - 1);
     }
 
     free_tokens(tokens, ntok);
 
-    /* Выполняем левую часть */
-    int rc1 = run_command_line(left);
-
-    /* Если левая часть завершилась с ошибкой, выполняем правую */
-    if (rc1 != 0) {
-        return run_command_line(right);
+    // empty sides => syntax error
+    if (left[0] == '\0' || right[0] == '\0') {
+        (void)write(STDOUT_FILENO, "Syntax error\n", 13);
+        return 2;
     }
 
+    int rc1 = run_command_line(left);
+    if (rc1 != 0) return run_command_line(right);
     return rc1;
 }
 
-/* Ключевое исправление: main должен правильно обрабатывать встроенный cat */
 int main(void) {
     char line[MAX_LINE];
 
@@ -439,13 +318,6 @@ int main(void) {
         char *cmd = trim_left(line);
         if (*cmd == '\0') continue;
 
-        /* Встроенный cat БЕЗ аргументов: читаем из stdin и выводим */
-        if (strcmp(cmd, "cat") == 0) {
-            builtin_cat_stdin();
-            continue;
-        }
-
-        /* Все остальные команды (включая cat с аргументами) */
         (void)run_with_or(cmd);
     }
 
