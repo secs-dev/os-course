@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
@@ -68,7 +69,9 @@ static int tokenize(const char *line, char *tokens[], int max_tokens) {
             if (ntok >= max_tokens - 1) break;
             char *t = malloc(3);
             if (!t) break;
-            t[0] = '>'; t[1] = '>'; t[2] = '\0';
+            t[0] = '>';
+            t[1] = '>';
+            t[2] = '\0';
             tokens[ntok++] = t;
             p += 2;
             continue;
@@ -83,7 +86,10 @@ static int tokenize(const char *line, char *tokens[], int max_tokens) {
 
             int has_inner = 0;
             for (const char *c = start + 1; c < p; c++) {
-                if (*c == '<' || *c == '>') { has_inner = 1; break; }
+                if (*c == '<' || *c == '>') {
+                    has_inner = 1;
+                    break;
+                }
             }
 
             if (has_inner) {
@@ -99,7 +105,8 @@ static int tokenize(const char *line, char *tokens[], int max_tokens) {
                 if (ntok >= max_tokens - 1) break;
                 char *t = malloc(2);
                 if (!t) break;
-                t[0] = *start; t[1] = '\0';
+                t[0] = *start;
+                t[1] = '\0';
                 tokens[ntok++] = t;
             } else {
                 // <file or >file => split into two tokens
@@ -107,7 +114,8 @@ static int tokenize(const char *line, char *tokens[], int max_tokens) {
 
                 char *t1 = malloc(2);
                 if (!t1) break;
-                t1[0] = *start; t1[1] = '\0';
+                t1[0] = *start;
+                t1[1] = '\0';
                 tokens[ntok++] = t1;
 
                 char *t2 = malloc(len);
@@ -142,6 +150,14 @@ static void free_tokens(char *tokens[], int ntok) {
     for (int i = 0; i < ntok; i++) free(tokens[i]);
 }
 
+static int get_self_exe_path(char *buf, size_t cap) {
+    // Linux-specific: /proc/self/exe points to current executable
+    ssize_t n = readlink("/proc/self/exe", buf, cap - 1);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+    return 1;
+}
+
 static int run_command_line(const char *line) {
     char *tokens[MAX_TOKENS];
     int ntok = tokenize(line, tokens, MAX_TOKENS);
@@ -156,7 +172,7 @@ static int run_command_line(const char *line) {
     int syntax_error = 0;
 
     for (int i = 0; i < ntok; i++) {
-        if (strcmp(tokens[i], ">>") == 0) { // unsupported
+        if (strcmp(tokens[i], ">>") == 0) {  // unsupported
             syntax_error = 1;
             break;
         }
@@ -168,19 +184,29 @@ static int run_command_line(const char *line) {
         }
 
         if (strcmp(tokens[i], "<") == 0 || strcmp(tokens[i], ">") == 0) {
-            if (i + 1 >= ntok) { syntax_error = 1; break; }
+            if (i + 1 >= ntok) {
+                syntax_error = 1;
+                break;
+            }
             if (is_redirect_token(tokens[i + 1]) || strcmp(tokens[i + 1], ">>") == 0) {
-                syntax_error = 1; break;
+                syntax_error = 1;
+                break;
             }
 
             if (strcmp(tokens[i], "<") == 0) {
-                if (in_file != NULL) { syntax_error = 1; break; }
+                if (in_file != NULL) {
+                    syntax_error = 1;
+                    break;
+                }
                 in_file = tokens[i + 1];
             } else {
-                if (out_file != NULL) { syntax_error = 1; break; }
+                if (out_file != NULL) {
+                    syntax_error = 1;
+                    break;
+                }
                 out_file = tokens[i + 1];
             }
-            i++; // skip filename
+            i++;  // skip filename
             continue;
         }
 
@@ -234,6 +260,16 @@ static int run_command_line(const char *line) {
         if (in_fd >= 0) close(in_fd);
         if (out_fd >= 0) close(out_fd);
 
+        // Fix nested shells: "./shell" should re-exec current binary (vtsh)
+        if (strcmp(argv[0], "./shell") == 0) {
+            char self[PATH_MAX];
+            if (get_self_exe_path(self, sizeof(self))) {
+                argv[0] = self;
+                execv(argv[0], argv);
+                _exit(127);
+            }
+        }
+
         execvp(argv[0], argv);
         _exit(127);
     }
@@ -270,7 +306,10 @@ static int run_with_or(const char *line) {
 
     int or_pos = -1;
     for (int i = 0; i < ntok; i++) {
-        if (is_or_operator(tokens[i])) { or_pos = i; break; }
+        if (is_or_operator(tokens[i])) {
+            or_pos = i;
+            break;
+        }
     }
 
     if (or_pos == -1) {
@@ -307,8 +346,6 @@ static int run_with_or(const char *line) {
 
 int main(void) {
     char line[MAX_LINE];
-    write(2, "DEBUG: my shell.c is running\n", 29);
-
 
     while (1) {
         print_prompt();
