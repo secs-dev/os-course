@@ -307,6 +307,8 @@ static int run_with_or(const char *line) {
 
 int main(void) {
     char line[MAX_LINE];
+    write(2, "DEBUG: my shell.c is running\n", 29);
+
 
     while (1) {
         print_prompt();
