@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblibvtsh.a CMakeFiles/libvtsh.dir/vtsh.c.o
+/usr/bin/ranlib liblibvtsh.a

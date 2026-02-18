@@ -1,0 +1,38 @@
+[
+{
+  "directory": "/home/alexa/lab-1/os-course/lab/vtsh/test",
+  "command": "/usr/bin/cc    -o CMakeFiles/proc-vfork.dir/loaders/proc-vfork.c.o -c /home/alexa/lab-1/os-course/lab/vtsh/loaders/proc-vfork.c",
+  "file": "/home/alexa/lab-1/os-course/lab/vtsh/loaders/proc-vfork.c",
+  "output": "CMakeFiles/proc-vfork.dir/loaders/proc-vfork.c.o"
+},
+{
+  "directory": "/home/alexa/lab-1/os-course/lab/vtsh/test",
+  "command": "/usr/bin/cc    -o CMakeFiles/shell-seq.dir/loaders/shell-seq.c.o -c /home/alexa/lab-1/os-course/lab/vtsh/loaders/shell-seq.c",
+  "file": "/home/alexa/lab-1/os-course/lab/vtsh/loaders/shell-seq.c",
+  "output": "CMakeFiles/shell-seq.dir/loaders/shell-seq.c.o"
+},
+{
+  "directory": "/home/alexa/lab-1/os-course/lab/vtsh/test",
+  "command": "/usr/bin/cc    -o CMakeFiles/cpu-mat-mul.dir/loaders/cpu-mat-mul.c.o -c /home/alexa/lab-1/os-course/lab/vtsh/loaders/cpu-mat-mul.c",
+  "file": "/home/alexa/lab-1/os-course/lab/vtsh/loaders/cpu-mat-mul.c",
+  "output": "CMakeFiles/cpu-mat-mul.dir/loaders/cpu-mat-mul.c.o"
+},
+{
+  "directory": "/home/alexa/lab-1/os-course/lab/vtsh/test",
+  "command": "/usr/bin/cc    -o CMakeFiles/ema-join-sm.dir/loaders/ema-join-sm.c.o -c /home/alexa/lab-1/os-course/lab/vtsh/loaders/ema-join-sm.c",
+  "file": "/home/alexa/lab-1/os-course/lab/vtsh/loaders/ema-join-sm.c",
+  "output": "CMakeFiles/ema-join-sm.dir/loaders/ema-join-sm.c.o"
+},
+{
+  "directory": "/home/alexa/lab-1/os-course/lab/vtsh/test/bin",
+  "command": "/usr/bin/cc  -I/home/alexa/lab-1/os-course/lab/vtsh/bin/.. -I/home/alexa/lab-1/os-course/lab/vtsh/lib/.  -o CMakeFiles/vtsh.dir/main.c.o -c /home/alexa/lab-1/os-course/lab/vtsh/bin/main.c",
+  "file": "/home/alexa/lab-1/os-course/lab/vtsh/bin/main.c",
+  "output": "bin/CMakeFiles/vtsh.dir/main.c.o"
+},
+{
+  "directory": "/home/alexa/lab-1/os-course/lab/vtsh/test/lib",
+  "command": "/usr/bin/cc  -I/home/alexa/lab-1/os-course/lab/vtsh/lib/.  -o CMakeFiles/libvtsh.dir/vtsh.c.o -c /home/alexa/lab-1/os-course/lab/vtsh/lib/vtsh.c",
+  "file": "/home/alexa/lab-1/os-course/lab/vtsh/lib/vtsh.c",
+  "output": "lib/CMakeFiles/libvtsh.dir/vtsh.c.o"
+}
+]

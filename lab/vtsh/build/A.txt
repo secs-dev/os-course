@@ -1,0 +1,4 @@
+3
+1 apple___
+2 banana__
+2 cherry__

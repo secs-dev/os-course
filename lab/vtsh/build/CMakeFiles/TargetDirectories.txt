@@ -1,0 +1,15 @@
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/cpu-mat-mul.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/ema-join-sm.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/cpu-mat-mul-opt.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/ema-join-sm-opt.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/loaders.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/loaders-opt.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/all-loaders.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/edit_cache.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/CMakeFiles/rebuild_cache.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/bin/CMakeFiles/vtsh.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/bin/CMakeFiles/edit_cache.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/bin/CMakeFiles/rebuild_cache.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/lib/CMakeFiles/libvtsh.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/lib/CMakeFiles/edit_cache.dir
+/home/alexa/lab-1/os-course/lab/vtsh/build/lib/CMakeFiles/rebuild_cache.dir

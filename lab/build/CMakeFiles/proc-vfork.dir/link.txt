@@ -1,0 +1,1 @@
+/usr/bin/cc "CMakeFiles/proc-vfork.dir/loaders/proc-vfork.c.o" -o proc-vfork 

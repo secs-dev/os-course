@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/vtsh.dir/main.c.o -o vtsh  ../lib/liblibvtsh.a 

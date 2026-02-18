@@ -1,0 +1,1 @@
+/usr/bin/cc "CMakeFiles/cpu-mat-mul-opt.dir/loaders/cpu-mat-mul.c.o" -o cpu-mat-mul-opt 

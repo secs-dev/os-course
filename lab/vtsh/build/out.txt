@@ -1,0 +1,6 @@
+5
+2 aaa xxx
+2 aaa yyy
+2 bbb xxx
+2 bbb yyy
+5 ccc zzz

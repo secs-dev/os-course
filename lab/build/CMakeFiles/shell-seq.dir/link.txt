@@ -1,0 +1,1 @@
+/usr/bin/cc "CMakeFiles/shell-seq.dir/loaders/shell-seq.c.o" -o shell-seq 
