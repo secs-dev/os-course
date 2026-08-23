@@ -2,15 +2,32 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <inttypes.h>      /* PRIu64, PRId64 */
+#include <inttypes.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 
 #if defined(__APPLE__)
 #  include <sys/endian.h>
+#  include <sys/fcntl.h>
 #else
 #  include <endian.h>
+#endif
+
+#ifdef __linux__
+#  include <linux/fs.h>      /* для O_DIRECT */
+#endif
+
+#ifdef _WIN32
+#  include <windows.h>
+#  include <io.h>
+#  define O_RDONLY _O_RDONLY
+#  define O_RDWR   _O_RDWR
+#  define open     _open
+#  define close    _close
+#  define lseek    _lseeki64
+#  define read     _read
+#  define write    _write
 #endif
 
 #define HEADER_SIZE     64
@@ -32,18 +49,74 @@ typedef struct {
     uint32_t flags;
 } __attribute__((packed)) Header;
 
+static int no_cache_mode = 0;
+
 /*
- * Чтение вершины по индексу.
- * Буфер фиксирован (24 байта), т.к. при fan_out == 1 запись всегда 24 байта.
- * Возвращает 0 при успехе, -1 при ошибке.
+ * Открытие файла с учётом режима (read-only или read-write) и опции no-cache.
+ * Возвращает дескриптор или -1 при ошибке.
+ */
+static int open_graph_file(const char *filename, int write_mode)
+{
+    int flags = write_mode ? O_RDWR : O_RDONLY;
+#ifdef __linux__
+    if (no_cache_mode)
+        flags |= O_DIRECT;
+#endif
+
+    int fd = open(filename, flags);
+    if (fd == -1)
+        return -1;
+
+#if defined(__APPLE__)
+    if (no_cache_mode) {
+        /* Отключаем кэширование на macOS */
+        int set = 1;
+        if (fcntl(fd, F_NOCACHE, &set) == -1) {
+            close(fd);
+            return -1;
+        }
+    }
+#elif defined(__linux__)
+    /* Для Linux O_DIRECT уже установлен, ничего дополнительно не нужно */
+#elif defined(_WIN32)
+    /* Для Windows используем CreateFile с FILE_FLAG_NO_BUFFERING */
+    if (no_cache_mode) {
+        /* Закрываем POSIX-дескриптор и открываем через WinAPI */
+        close(fd);
+        HANDLE h = CreateFileA(filename,
+                               write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               NULL,
+                               OPEN_EXISTING,
+                               FILE_FLAG_NO_BUFFERING,
+                               NULL);
+        if (h == INVALID_HANDLE_VALUE)
+            return -1;
+        /* Преобразуем HANDLE в дескриптор C (это не portable) */
+        fd = _open_osfhandle((intptr_t)h, flags);
+        if (fd == -1) {
+            CloseHandle(h);
+            return -1;
+        }
+    }
+#endif
+
+    return fd;
+}
+
+/*
+ * Чтение вершины с использованием lseek + read (без pread).
+ * Буфер фиксирован (24 байта).
  */
 static int read_vertex(int fd, uint64_t index, size_t record_size,
                        int64_t *value, uint32_t *degree, uint64_t *child)
 {
     off_t offset = HEADER_SIZE + index * record_size;
-    unsigned char buf[24];  /* 8 (value) + 4 (degree) + 4 (reserved) + 8 (child) */
+    if (lseek(fd, offset, SEEK_SET) == (off_t)-1)
+        return -1;
 
-    ssize_t n = pread(fd, buf, sizeof(buf), offset);
+    unsigned char buf[24];
+    ssize_t n = read(fd, buf, sizeof(buf));
     if (n != sizeof(buf))
         return -1;
 
@@ -62,14 +135,16 @@ static int read_vertex(int fd, uint64_t index, size_t record_size,
 }
 
 /*
- * Запись нового значения вершины (только поле value) обратно в файл.
- * Возвращает 0 при успехе, -1 при ошибке.
+ * Запись нового значения вершины (только поле value) с использованием lseek + write.
  */
 static int write_value(int fd, uint64_t index, size_t record_size, int64_t new_value)
 {
-    off_t offset = HEADER_SIZE + index * record_size;  /* начало записи — поле value */
-    uint64_t value_le = htole64((uint64_t)new_value);  /* new_value — int64_t, приводим к uint64_t */
-    ssize_t n = pwrite(fd, &value_le, sizeof(value_le), offset);
+    off_t offset = HEADER_SIZE + index * record_size;
+    if (lseek(fd, offset, SEEK_SET) == (off_t)-1)
+        return -1;
+
+    uint64_t value_le = htole64((uint64_t)new_value);
+    ssize_t n = write(fd, &value_le, sizeof(value_le));
     return (n == sizeof(value_le)) ? 0 : -1;
 }
 
@@ -80,15 +155,19 @@ static int write_value(int fd, uint64_t index, size_t record_size, int64_t new_v
  */
 static int64_t traverse_chain(const char *filename, int write_mode)
 {
-    int flags = write_mode ? O_RDWR : O_RDONLY;
-    int fd = open(filename, flags);
+    int fd = open_graph_file(filename, write_mode);
     if (fd == -1) {
-        perror("open");
+        perror("open_graph_file");
         return -1;
     }
 
     /* Чтение заголовка */
     Header header;
+    if (lseek(fd, 0, SEEK_SET) == (off_t)-1) {
+        perror("lseek");
+        close(fd);
+        return -1;
+    }
     ssize_t n = read(fd, &header, sizeof(header));
     if (n != sizeof(header)) {
         fprintf(stderr, "Failed to read header from %s\n", filename);
@@ -96,7 +175,6 @@ static int64_t traverse_chain(const char *filename, int write_mode)
         return -1;
     }
 
-    /* Проверка магического числа */
     if (memcmp(header.magic, MAGIC, MAGIC_LEN) != 0) {
         fprintf(stderr, "Invalid magic number in %s\n", filename);
         close(fd);
@@ -141,16 +219,14 @@ static int64_t traverse_chain(const char *filename, int write_mode)
             return -1;
         }
 
-        /* Если включён режим записи, обновляем значение */
         if (write_mode) {
-            int64_t new_value = value + 1;   /* простой инкремент – создаём нагрузку на запись */
+            int64_t new_value = value + 1;
             if (write_value(fd, current, record_size, new_value) != 0) {
                 fprintf(stderr, "Error writing value at index %" PRIu64 " in %s\n",
                         current, filename);
                 close(fd);
                 return -1;
             }
-            /* Для отладки можно вывести обновление, но в бенчмарке лучше молчать */
         }
 
         if (degree == 0)
@@ -174,25 +250,32 @@ static int64_t traverse_chain(const char *filename, int write_mode)
     }
 
     close(fd);
-    return (int64_t)(steps + 1);  /* +1 за корневую вершину */
+    return (int64_t)(steps + 1);
 }
 
 int main(int argc, char **argv)
 {
     int write_mode = 0;
-    int iter_pos = 1;   /* позиция аргумента с числом итераций */
+    int iter_pos = 1;
 
-    /* Проверяем, не передан ли флаг --write */
-    if (argc >= 2 && strcmp(argv[1], "--write") == 0) {
-        write_mode = 1;
-        iter_pos = 2;
+    /* Разбор аргументов: сначала обрабатываем флаги --write и --no-cache */
+    while (iter_pos < argc) {
+        if (strcmp(argv[iter_pos], "--write") == 0) {
+            write_mode = 1;
+            iter_pos++;
+        } else if (strcmp(argv[iter_pos], "--no-cache") == 0) {
+            no_cache_mode = 1;
+            iter_pos++;
+        } else {
+            break;
+        }
     }
 
-    if (argc - iter_pos < 2) {   /* нужно как минимум число итераций и один файл */
-        fprintf(stderr, "Usage: %s [--write] <num_iterations> <graph_file1> [graph_file2 ...]\n",
+    if (argc - iter_pos < 2) {
+        fprintf(stderr, "Usage: %s [--write] [--no-cache] <num_iterations> <graph_file1> [graph_file2 ...]\n",
                 argv[0]);
-        fprintf(stderr, "  --write    : update vertex values (write load)\n");
-        fprintf(stderr, "  otherwise : read-only traversal\n");
+        fprintf(stderr, "  --write     : update vertex values (write load)\n");
+        fprintf(stderr, "  --no-cache  : disable system cache (O_DIRECT on Linux, F_NOCACHE on macOS, FILE_FLAG_NO_BUFFERING on Windows)\n");
         return 1;
     }
 
