@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-/* Выбор правильного заголовка для little‑endian преобразований */
 #if defined(__APPLE__)
 #  include <sys/endian.h>
 #else
@@ -34,7 +33,7 @@ typedef struct {
 } __attribute__((packed)) Header;
 
 /*
- * Чтение вершины по индексу с использованием POSIX pread().
+ * Чтение вершины по индексу.
  * Буфер фиксирован (24 байта), т.к. при fan_out == 1 запись всегда 24 байта.
  * Возвращает 0 при успехе, -1 при ошибке.
  */
@@ -63,12 +62,26 @@ static int read_vertex(int fd, uint64_t index, size_t record_size,
 }
 
 /*
- * Обход графа-цепи из заданного файла.
- * Возвращает количество пройденных вершин (шагов) или -1 при ошибке.
+ * Запись нового значения вершины (только поле value) обратно в файл.
+ * Возвращает 0 при успехе, -1 при ошибке.
  */
-static int64_t traverse_chain(const char *filename)
+static int write_value(int fd, uint64_t index, size_t record_size, int64_t new_value)
 {
-    int fd = open(filename, O_RDONLY);
+    off_t offset = HEADER_SIZE + index * record_size;  /* начало записи — поле value */
+    uint64_t value_le = htole64((uint64_t)new_value);  /* new_value — int64_t, приводим к uint64_t */
+    ssize_t n = pwrite(fd, &value_le, sizeof(value_le), offset);
+    return (n == sizeof(value_le)) ? 0 : -1;
+}
+
+/*
+ * Обход графа-цепи.
+ * Если write_mode != 0, то значение каждой посещённой вершины обновляется (инкремент).
+ * Возвращает количество пройденных вершин или -1 при ошибке.
+ */
+static int64_t traverse_chain(const char *filename, int write_mode)
+{
+    int flags = write_mode ? O_RDWR : O_RDONLY;
+    int fd = open(filename, flags);
     if (fd == -1) {
         perror("open");
         return -1;
@@ -128,8 +141,17 @@ static int64_t traverse_chain(const char *filename)
             return -1;
         }
 
-        /* Для отладки можно выводить каждую вершину, но в данном режиме выключим */
-        /* printf("Vertex %" PRIu64 ": value = %ld, degree = %u\n", current, value, degree); */
+        /* Если включён режим записи, обновляем значение */
+        if (write_mode) {
+            int64_t new_value = value + 1;   /* простой инкремент – создаём нагрузку на запись */
+            if (write_value(fd, current, record_size, new_value) != 0) {
+                fprintf(stderr, "Error writing value at index %" PRIu64 " in %s\n",
+                        current, filename);
+                close(fd);
+                return -1;
+            }
+            /* Для отладки можно вывести обновление, но в бенчмарке лучше молчать */
+        }
 
         if (degree == 0)
             break;
@@ -157,34 +179,45 @@ static int64_t traverse_chain(const char *filename)
 
 int main(int argc, char **argv)
 {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s <num_iterations> <graph_file1> [graph_file2 ...]\n",
+    int write_mode = 0;
+    int iter_pos = 1;   /* позиция аргумента с числом итераций */
+
+    /* Проверяем, не передан ли флаг --write */
+    if (argc >= 2 && strcmp(argv[1], "--write") == 0) {
+        write_mode = 1;
+        iter_pos = 2;
+    }
+
+    if (argc - iter_pos < 2) {   /* нужно как минимум число итераций и один файл */
+        fprintf(stderr, "Usage: %s [--write] <num_iterations> <graph_file1> [graph_file2 ...]\n",
                 argv[0]);
+        fprintf(stderr, "  --write    : update vertex values (write load)\n");
+        fprintf(stderr, "  otherwise : read-only traversal\n");
         return 1;
     }
 
-    long iter_long = strtol(argv[1], NULL, 10);
+    long iter_long = strtol(argv[iter_pos], NULL, 10);
     if (iter_long <= 0) {
         fprintf(stderr, "Number of iterations must be positive\n");
         return 1;
     }
     uint64_t iterations = (uint64_t)iter_long;
 
-    int num_files = argc - 2;
-    char **files = argv + 2;
+    int num_files = argc - iter_pos - 1;
+    char **files = argv + iter_pos + 1;
 
     for (uint64_t i = 0; i < iterations; i++) {
         int idx = i % num_files;
         const char *fname = files[idx];
 
-        fprintf(stderr, "Iteration %" PRIu64 "/%" PRIu64 ": traversing %s ... ",
-                i + 1, iterations, fname);
-        int64_t nodes = traverse_chain(fname);
+        fprintf(stderr, "Iteration %" PRIu64 "/%" PRIu64 " (%s): traversing %s ... ",
+                i + 1, iterations, write_mode ? "write" : "read", fname);
+        int64_t nodes = traverse_chain(fname, write_mode);
         if (nodes < 0) {
             fprintf(stderr, "FAILED\n");
             return 1;
         }
-        fprintf(stderr, "OK (%" PRId64 " nodes traversed)\n", nodes);
+        fprintf(stderr, "OK (%" PRId64 " nodes processed)\n", nodes);
     }
 
     return 0;
