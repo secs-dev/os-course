@@ -1,3 +1,4 @@
+#define _GNU_SOURCE          /* для O_DIRECT на Linux */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
