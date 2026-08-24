@@ -25,15 +25,10 @@ N записей вершин ФИКСИРОВАННОГО размера, ид�
     node_count       Q    количество вершин
     record_size      I    размер записи вершины, байт
     fan_out          I    максимальная исходящая степень вершины
-    page_size        I    размер страницы, использованный при генерации
-    back_prob_permille I  P(обратный переход) * 1000
-    seed             Q    зерно генератора (для воспроизводимости)
     root_index       Q    индекс стартовой вершины обхода
-    min_step_nodes   Q    гарантированный минимальный шаг (в узлах)
-                          между вершинами для "случайных" переходов
     flags            I    битовые флаги (bit0: 1 = граф ациклический)
 
-Итого 64 байта.
+Итого 40 байт.
 
 Запись вершины (record_size = 16 + 8*fan_out байт):
 
@@ -128,9 +123,9 @@ import sys
 
 MAGIC = b"GCACHEG1"
 VERSION = 1
-HEADER_FMT = "<8sIQIIIIQQQI"
+HEADER_FMT = "<8sIQIIQI"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
-assert HEADER_SIZE == 64, HEADER_SIZE
+assert HEADER_SIZE == 40, HEADER_SIZE
 SENTINEL = (1 << 64) - 1
 MASK64 = (1 << 64) - 1
 
@@ -256,9 +251,10 @@ def parse_size(text: str) -> int:
 
 
 # --------------------------------------------------------------------------
-# Основная генерация
+# Расчёт раскладки (record_size / node_count / min_step_nodes) — общий для
+# реальной генерации и для режима "только описание структуры" (--describe-only)
 # --------------------------------------------------------------------------
-def build_graph(args):
+def compute_layout(args, quiet: bool = False):
     record_size = 16 + 8 * args.fanout
     avail = args.size_bytes - HEADER_SIZE
     if avail < record_size * args.min_nodes:
@@ -272,13 +268,102 @@ def build_graph(args):
 
     min_step_nodes = max(1, math.ceil(args.page_size * args.min_step_pages / record_size))
     if min_step_nodes >= node_count:
-        print(
-            f"[предупреждение] min_step_nodes ({min_step_nodes}) >= node_count "
-            f"({node_count}); гарантия кэш-промаха ослаблена — граф слишком мал "
-            f"относительно page_size.",
-            file=sys.stderr,
-        )
+        if not quiet:
+            print(
+                f"[предупреждение] min_step_nodes ({min_step_nodes}) >= node_count "
+                f"({node_count}); гарантия кэш-промаха ослаблена — граф слишком мал "
+                f"относительно page_size.",
+                file=sys.stderr,
+            )
         min_step_nodes = max(1, node_count // 4)
+
+    return {
+        "record_size": record_size,
+        "node_count": node_count,
+        "min_step_nodes": min_step_nodes,
+    }
+
+
+# --------------------------------------------------------------------------
+# Генерация C-описания бинарного формата (заголовок + запись вершины) для
+# текущих параметров — чтобы сразу иметь готовый struct для утилиты чтения/
+# обхода/записи на C, без ручного пересчёта смещений и размеров.
+# --------------------------------------------------------------------------
+def render_c_struct(args, layout: dict) -> str:
+    fanout = args.fanout
+    record_size = layout["record_size"]
+    node_count = layout["node_count"]
+    min_step_nodes = layout["min_step_nodes"]
+
+    return f"""\
+/* ------------------------------------------------------------------------
+ * Автоматически сгенерировано graphgen.py для текущих параметров:
+ *   size={args.size}  fanout={fanout}  backprob={args.backprob}
+ *   page_size={args.page_size}  min_step_pages={args.min_step_pages}
+ *   seed={getattr(args, "seed", "N/A")}
+ *
+ *   node_count      = {node_count}
+ *   record_size     = {record_size} байт
+ *   min_step_nodes  = {min_step_nodes} (~{min_step_nodes * record_size} байт)
+ *
+ *   ВНИМАНИЕ: page_size/backprob/seed/min_step_nodes НЕ хранятся в самом
+ *   файле (сознательно, чтобы читающая программа не могла подстроиться
+ *   под гиперпараметры генерации) — они есть только здесь, в этом
+ *   сгенерированном для СБОРКИ снипете, и в консольном выводе генератора.
+ * ------------------------------------------------------------------------ */
+#include <stdint.h>
+#include <stddef.h>
+
+#define GCACHEG_MAGIC        "GCACHEG1"   /* 8 байт, без завершающего нуля  */
+#define GCACHEG_VERSION      1u
+#define GCACHEG_FAN_OUT      {fanout}
+#define GCACHEG_NODE_COUNT   {node_count}ULL
+#define GCACHEG_RECORD_SIZE  {record_size}u
+#define GCACHEG_SENTINEL     0xFFFFFFFFFFFFFFFFULL  /* пустой слот children[] */
+
+#pragma pack(push, 1)
+
+/* Заголовок файла, ровно 40 байт, little-endian, без выравнивания.
+ * Гиперпараметры генерации (page_size, backprob, seed, min_step_nodes)
+ * в файл намеренно не пишутся. */
+typedef struct {{
+    char     magic[8];             /* "GCACHEG1"                      */
+    uint32_t version;
+    uint64_t node_count;
+    uint32_t record_size;          /* == sizeof(gcacheg_node_t)       */
+    uint32_t fan_out;
+    uint64_t root_index;           /* индекс стартовой вершины обхода */
+    uint32_t flags;                /* bit0: 1 = граф ацикличен (DAG)  */
+}} gcacheg_header_t;
+
+/* Запись одной вершины, {record_size} байт. */
+typedef struct {{
+    int64_t  value;                    /* payload, можно менять при записи */
+    uint32_t degree;                   /* фактическое число детей <= fan_out */
+    uint32_t reserved;
+    uint64_t children[GCACHEG_FAN_OUT]; /* индексы; неисп. слоты = SENTINEL  */
+}} gcacheg_node_t;
+
+#pragma pack(pop)
+
+_Static_assert(sizeof(gcacheg_header_t) == 40, "header size mismatch");
+_Static_assert(sizeof(gcacheg_node_t) == GCACHEG_RECORD_SIZE, "record size mismatch");
+
+/* offset(i) = header + i * record_size, O(1) доступ по индексу */
+static inline uint64_t gcacheg_node_offset(uint64_t index) {{
+    return (uint64_t)sizeof(gcacheg_header_t) + index * (uint64_t)sizeof(gcacheg_node_t);
+}}
+"""
+
+
+# --------------------------------------------------------------------------
+# Основная генерация
+# --------------------------------------------------------------------------
+def build_graph(args):
+    layout = compute_layout(args)
+    record_size = layout["record_size"]
+    node_count = layout["node_count"]
+    min_step_nodes = layout["min_step_nodes"]
 
     rng = SplitMix64(args.seed)
     children = [[] for _ in range(node_count)]
@@ -412,11 +497,7 @@ def write_file(path, args, g):
         node_count,
         record_size,
         args.fanout,
-        args.page_size,
-        int(round(args.backprob * 1000)),
-        args.seed & MASK64,
         g["root"],
-        g["min_step_nodes"],
         flags,
     )
 
@@ -498,7 +579,7 @@ def main():
         help="вероятность 'обратного' перехода (к меньшему offset), 0..1. "
              "0 = чисто последовательно вперёд, 1 = чисто назад",
     )
-    ap.add_argument("--seed", type=int, required=True, help="зерно генератора (для воспроизводимости)")
+    ap.add_argument("--seed", type=int, default=None, help="зерно генератора (для воспроизводимости); не нужно для --describe-only")
     ap.add_argument("--page-size", type=int, default=4096, help="размер страницы ОС/ФС, байт")
     ap.add_argument(
         "--min-step-pages", type=float, default=2.0,
@@ -519,6 +600,16 @@ def main():
     ap.add_argument("--value-min", type=int, default=-(2**31))
     ap.add_argument("--value-max", type=int, default=2**31 - 1)
     ap.add_argument("--verify", action="store_true", help="после генерации проверить связность и ацикличность")
+    ap.add_argument(
+        "--describe-only", action="store_true",
+        help="не генерировать файл: только рассчитать раскладку (node_count, "
+             "record_size, min_step_nodes) для заданных параметров и вывести "
+             "C-описание структуры (заголовок + запись вершины)",
+    )
+    ap.add_argument(
+        "--struct-out", default=None,
+        help="дополнительно сохранить C-описание структуры в файл (.h)",
+    )
 
     args = ap.parse_args()
 
@@ -533,6 +624,19 @@ def main():
         raise SystemExit("--backprob должен быть в диапазоне [0, 1]")
 
     args.size_bytes = parse_size(args.size)
+
+    if args.describe_only:
+        layout = compute_layout(args)
+        c_code = render_c_struct(args, layout)
+        print(c_code)
+        if args.struct_out:
+            with open(args.struct_out, "w") as f:
+                f.write(c_code)
+            print(f"[инфо] C-описание сохранено в {args.struct_out}", file=sys.stderr)
+        return
+
+    if args.seed is None:
+        raise SystemExit("--seed обязателен для генерации (используйте --describe-only, если seed не нужен)")
 
     g = build_graph(args)
     actual_size = write_file(args.output, args, g)
@@ -562,6 +666,22 @@ def main():
         print(f"  граф ацикличен:      {v['is_dag']}")
         if v["coverage"] < 0.999:
             print("  [ВНИМАНИЕ] не все вершины достижимы из корня!", file=sys.stderr)
+
+    # По требованию: после генерации также печатаем C-описание структуры
+    # файла (заголовок + запись вершины) — удобно сразу скопировать в
+    # утилиту-читатель/обходчик на C.
+    layout = {
+        "record_size": g["record_size"],
+        "node_count": g["node_count"],
+        "min_step_nodes": g["min_step_nodes"],
+    }
+    c_code = render_c_struct(args, layout)
+    print()
+    print(c_code)
+    if args.struct_out:
+        with open(args.struct_out, "w") as f:
+            f.write(c_code)
+        print(f"[инфо] C-описание сохранено в {args.struct_out}", file=sys.stderr)
 
 
 if __name__ == "__main__":
