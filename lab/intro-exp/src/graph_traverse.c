@@ -31,7 +31,7 @@
 #  define write    _write
 #endif
 
-#define HEADER_SIZE     64
+#define HEADER_SIZE     40
 #define MAGIC           "GCACHEG1"
 #define MAGIC_LEN       8
 
@@ -42,11 +42,7 @@ typedef struct {
     uint64_t node_count;
     uint32_t record_size;
     uint32_t fan_out;
-    uint32_t page_size;
-    uint32_t back_prob_permille;
-    uint64_t seed;
     uint64_t root_index;
-    uint64_t min_step_nodes;
     uint32_t flags;
 } __attribute__((packed)) Header;
 
