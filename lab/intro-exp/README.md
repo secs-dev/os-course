@@ -36,3 +36,15 @@ clang -o out/graph_traverse_mmap src/graph_traverse_mmap.c -Wall -O2
 # Режим записи с отключением кэша
 ./out/graph_traverse_mmap --write --no-cache 5 data1.bin data2.bin data3.bin
 ```
+
+Sample logs
+```log
+time ./lab/intro-exp/out/graph_traverse --write 2 graph.bin
+Iteration 1/2 (write): traversing graph.bin ... OK (2796201 nodes processed)
+Iteration 2/2 (write): traversing graph.bin ... OK (2796201 nodes processed)
+
+________________________________________________________
+Executed in    9.36 secs    fish           external
+   usr time    1.76 secs    0.28 millis    1.76 secs
+   sys time    6.95 secs    1.21 millis    6.95 secs
+```
