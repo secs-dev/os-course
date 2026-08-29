@@ -24,8 +24,9 @@
 graph TD
     start["Начало"]
 
-    subgraph xv6_ ["Xv6"]
+    subgraph other [" "]
         xv6["<a href='https://github.com/secs-dev/xv6-riscv' style='color:black;'>Xv6</a>"]
+        project["<a href='https://github.com/secs-dev/os-course/blob/main/lab/project/README.md' style='color:black;'>Project</a>"]
     end
 
     subgraph fs ["Файловая система"]
@@ -42,8 +43,20 @@ graph TD
     end
 
     start --> xv6
+    start --> project
     start --> vtsh
     vtsh --> vtpc
     vtsh --> vtkm
     vtpc --> vtfs
+
+    classDef free fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#37474f
+    classDef easy fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#1b5e20
+    classDef medium fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#f57f17
+    classDef hard fill:#ffcdd2,stroke:#c62828,stroke-width:2px,color:#b71c1c
+
+    class project hard
+    class vtsh easy
+    class vtpc medium
+    class vtkm medium
+    class vtfs hard
 ```
