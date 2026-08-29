@@ -39,7 +39,9 @@ Settings -> Collaborators and teams -> Add people
 1. Отведите ветку от `main`. Ветка должна называться `lab-<slug>`,
    где `slug` -- кодовое имя лабораторной работы, например: `lab-hugepage`.
 
-3. Напишите код.
+2. Напишите код.
+
+3. Реализуйте автоматические тесты и настройте CI, если для задания это уже не сделано.
 
 4. Сделайте PR из `lab-<slug>` в `main`. В [pull_request_template.md](https://github.com/secs-dev/os-course/blob/main/.github/pull_request_template.md?plain=1) вы найдете требования к описанию PR.
 

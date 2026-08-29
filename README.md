@@ -32,6 +32,7 @@ graph TD
     subgraph fs ["Файловая система"]
         vtpc["<a href='https://github.com/secs-dev/os-course/blob/main/lab/vtpc/README.md' style='color:black;'>Page Cache</a>"]
         vtfs["<a href='https://github.com/secs-dev/os-course/blob/main/lab/vtfs/README.md' style='color:black;'>Kernel FS</a>"]
+        fuse["<a href='https://github.com/secs-dev/os-course/blob/main/lab/fuse/README.md' style='color:black;'>FUSE</a>"]
     end
 
     subgraph mp ["Многозадачность"]
@@ -50,6 +51,7 @@ graph TD
     vtsh --> vtpc
     vtsh --> vtkm
     vtpc --> vtfs
+    vtsh --> fuse
     vtsh --> corosched
     vtpc --> corohttp
     corosched --> corohttp
@@ -64,6 +66,7 @@ graph TD
     class vtpc medium
     class vtkm medium
     class vtfs hard
+    class fuse medium
     class corosched medium
     class corohttp medium
 ```
