@@ -36,6 +36,8 @@ graph TD
 
     subgraph mp ["Многозадачность"]
         vtsh["<a href='https://github.com/secs-dev/os-course/blob/main/lab/vtsh/README.md' style='color:black;'>Shell</a>"]
+        corosched["<a href='https://github.com/secs-dev/os-course/blob/main/lab/corosched/README.md' style='color:black;'>CoroSched</a>"]
+        corohttp["<a href='https://github.com/secs-dev/os-course/blob/main/lab/corohttp/README.md' style='color:black;'>CoroHTTP</a>"]
     end
 
     subgraph mp ["Linux"]
@@ -48,6 +50,9 @@ graph TD
     vtsh --> vtpc
     vtsh --> vtkm
     vtpc --> vtfs
+    vtsh --> corosched
+    vtpc --> corohttp
+    corosched --> corohttp
 
     classDef free fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#37474f
     classDef easy fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#1b5e20
@@ -59,4 +64,6 @@ graph TD
     class vtpc medium
     class vtkm medium
     class vtfs hard
+    class corosched medium
+    class corohttp medium
 ```
