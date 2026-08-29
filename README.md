@@ -51,7 +51,7 @@ graph TD
     vtsh --> vtpc
     vtsh --> vtkm
     vtpc --> vtfs
-    vtsh --> fuse
+    vtpc --> fuse
     vtsh --> corosched
     vtpc --> corohttp
     corosched --> corohttp
