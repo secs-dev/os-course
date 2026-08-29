@@ -41,8 +41,9 @@ graph TD
         corohttp["<a href='https://github.com/secs-dev/os-course/blob/main/lab/corohttp/README.md' style='color:black;'>CoroHTTP</a>"]
     end
 
-    subgraph mp ["Linux"]
+    subgraph linux ["Linux"]
         vtkm["<a href='https://github.com/secs-dev/os-course/blob/main/lab/vtkm/README.md' style='color:black;'>Kernel Module</a>"]
+        bpf_xdp["<a href='https://github.com/secs-dev/os-course/blob/main/lab/bpf-xdp/README.md' style='color:black;'>BPF. XDP</a>"]
     end
 
     start --> xv6
@@ -55,6 +56,7 @@ graph TD
     vtsh --> corosched
     vtpc --> corohttp
     corosched --> corohttp
+    vtsh --> bpf_xdp
 
     classDef free fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#37474f
     classDef easy fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#1b5e20
@@ -69,4 +71,5 @@ graph TD
     class fuse medium
     class corosched medium
     class corohttp medium
+    class bpf_xdp medium
 ```
