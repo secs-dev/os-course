@@ -1,6 +1,6 @@
 # BPF. XDP
 
-В данном туториале мы познакомимся с [eBPF](https://ebpf.io/what-is-ebpf/) на примере [XDP](https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_XDP/).
+В данной ЛР мы познакомимся с [eBPF](https://ebpf.io/what-is-ebpf/) на примере [XDP](https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_XDP/).
 
 Мы начнем с тривиального XDP-фильтра, загрузим его и выполним в ядре, а после разработаем и опробуем простой ограничитель RPS. Поднимемся от "голого" С и [системного вызова bpf](https://man7.org/linux/man-pages/man2/bpf.2.html) к [libbpf](https://docs.kernel.org/bpf/libbpf/libbpf_overview.html).
 
@@ -168,9 +168,68 @@ sudo bpftool prog dump jited tag 57cd311f2e27366b
 
 Проанализируйте увиденное.
 
-## Безопасность
+## Блокировка IPv4 кадров
 
-...
+Теперь усложним пример. Будем читать ethernet заголовок и блокировать IPv4 пакеты.
+
+Попробуйте следующую реализацию:
+
+```c
+#include <linux/bpf.h>
+
+struct eth {
+  unsigned char dst[6];
+  unsigned char src[6];
+  unsigned short type;
+} __attribute__((packed));
+
+__attribute__((section("xdp"), used))
+enum xdp_action bad(struct xdp_md *ctx) {
+  void *data = (void *)(long)ctx->data;
+  struct eth *eth = data;
+
+  if (eth->type == __builtin_bswap16(0x0800)) {
+    return XDP_DROP;
+  }
+
+  return XDP_PASS;
+}
+```
+
+Вы должны получить `Permission denied`. За что?.. А вы уверены, что не вышли за пределы буфера `ctx`? Вот и [eBPF verifier](https://kernel-internals.org/bpf/bpf-verifier/) не уверен.
+
+Чтобы прочитать диагностику от него, передайте `log_buf` в `BPF_PROG_LOAD`:
+
+```c
+attr.log_buf = (__u64)log;
+attr.log_size = sizeof(log);
+attr.log_level = 1;
+```
+
+Теперь получите пояснение:
+
+```txt
+0: R1=ctx() R10=fp0
+0: (7b) *(u64 *)(r10 -16) = r1        ; R1=ctx() R10=fp0 fp-16_w=ctx()
+1: (79) r1 = *(u64 *)(r10 -16)        ; R1_w=ctx() R10=fp0 fp-16_w=ctx()
+2: (61) r1 = *(u32 *)(r1 +0)          ; R1_w=pkt(r=0)
+3: (7b) *(u64 *)(r10 -24) = r1        ; R1_w=pkt(r=0) R10=fp0 fp-24_w=pkt(r=0)
+4: (79) r1 = *(u64 *)(r10 -24)        ; R1_w=pkt(r=0) R10=fp0 fp-24_w=pkt(r=0)
+5: (7b) *(u64 *)(r10 -32) = r1        ; R1_w=pkt(r=0) R10=fp0 fp-32_w=pkt(r=0)
+6: (79) r1 = *(u64 *)(r10 -32)        ; R1_w=pkt(r=0) R10=fp0 fp-32_w=pkt(r=0)
+7: (71) r2 = *(u8 *)(r1 +12)
+invalid access to packet, off=12 size=1, R1(id=0,off=12,r=0)
+R1 offset is outside of the packet
+processed 8 insns (limit 1000000) max_states_per_insn 0 total_states 0 peak_states 0 mark_read 0
+```
+
+Все понятно.
+
+Можно сопоставлять диагностику со строками изначальной программы, но это за пределами данного туториала.
+
+Исправьте программу так, чтобы verifier доказал ее валидность.
+
+Попробуйте создать фильтр, работа которого не завершается. Что скажет verifier?
 
 ## Блокировка по IP
 
