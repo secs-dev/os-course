@@ -41,7 +41,7 @@ Settings -> Collaborators and teams -> Add people
 
 3. Напишите код.
 
-4. Сделайте PR из `lab-<slug>` в `main`. В [pull_request_template.md](https://github.com/secs-dev/os-course/blob/main/.github/pull_request_template.md) вы найдете требования к описанию PR.
+4. Сделайте PR из `lab-<slug>` в `main`. В [pull_request_template.md](https://github.com/secs-dev/os-course/blob/main/.github/pull_request_template.md?plain=1) вы найдете требования к описанию PR.
 
 5. Пройдите автоматические проверки.
 
