@@ -66,7 +66,7 @@ graph TD
     class project hard
     class vtsh easy
     class vtpc medium
-    class vtkm medium
+    class vtkm easy
     class vtfs hard
     class fuse medium
     class corosched medium
