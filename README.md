@@ -25,6 +25,7 @@ graph TD
     start["Начало"]
 
     subgraph other [" "]
+        intro_exp["<a href='https://github.com/secs-dev/os-course/blob/main/lab/intro-exp/README.md' style='color:black;'>Intro Exp</a>"]
         xv6["<a href='https://github.com/secs-dev/xv6-riscv' style='color:black;'>Xv6</a>"]
         project["<a href='https://github.com/secs-dev/os-course/blob/main/lab/project/README.md' style='color:black;'>Project</a>"]
     end
@@ -46,6 +47,7 @@ graph TD
         bpf_xdp["<a href='https://github.com/secs-dev/os-course/blob/main/lab/bpf-xdp/README.md' style='color:black;'>BPF. XDP</a>"]
     end
 
+    start --> intro_exp
     start --> xv6
     start --> project
     start --> vtsh
@@ -63,6 +65,7 @@ graph TD
     classDef medium fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#f57f17
     classDef hard fill:#ffcdd2,stroke:#c62828,stroke-width:2px,color:#b71c1c
 
+    class intro_exp easy
     class project hard
     class vtsh easy
     class vtpc medium
