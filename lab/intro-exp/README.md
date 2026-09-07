@@ -7,12 +7,9 @@
 >
 > Общие методические материалы, не привязанные конкретно к этому заданию,
 > вынесены отдельно и переиспользуются и в других лабораторных курса:
-> - [`../../docs/methodology/environment.md`](../../docs/methodology/environment.md) — настройка и изоляция окружения
-> - [`../../docs/methodology/monitoring.md`](../../docs/methodology/monitoring.md) — утилиты мониторинга и как читать их вывод
-> - [`../../docs/methodology/statistics.md`](../../docs/methodology/statistics.md) — доверительные интервалы, выбор N
->
-> (пути даны из расчёта расположения `lab/intro-exp/README.md` в репозитории;
-> поправьте относительные ссылки, если структура вашего репозитория отличается)
+> - [`docs/experiments/environment.md`](../../docs/experiments/environment.md) — настройка и изоляция окружения
+> - [`docs/experiments/monitoring.md`](../../docs/experiments/monitoring.md) — утилиты мониторинга и как читать их вывод
+> - [`docs/experiments/statistics.md`](../../docs/experiments/statistics.md) — доверительные интервалы, выбор N
 
 ## 0. Цель работы
 
@@ -35,15 +32,14 @@
 
 ## 1. Что выдаётся
 
-Приложения лежат в репозитории по следующим путям (пути даны от каталога
-`lab/intro-exp/`):
+Приложения лежат в репозитории по следующим путям:
 
-- `../util/graphgen.py` — генератор синтетического графа: создаёт бинарный
+- `lab/util/graphgen.py` — генератор синтетического графа: создаёт бинарный
   файл, в котором узлы ссылаются друг на друга смещениями внутри файла.
   Топология и параметры генерации управляют пространственной локальностью
   будущего обхода (см. раздел 2).
-- `src/graph_traverse.c` — обходит граф через `read()`/`lseek()`.
-- `src/graph_traverse_mmap.c` — та же логика обхода, но через `mmap()`.
+- `lab/intro-exp/src/graph_traverse.c` — обходит граф через `read()`/`lseek()`.
+- `lab/intro-exp/src/graph_traverse_mmap.c` — та же логика обхода, но через `mmap()`.
 
 Обе программы обхода принимают одинаковый интерфейс командной строки:
 
@@ -57,7 +53,7 @@
 - `--no-cache` — отключить/обойти файловый кэш ОС на время обхода (реализовано
   внутри программы кроссплатформенно для Linux/macOS — предпочитайте этот
   флаг ручному `drop_caches`, если вам нужен контроль состояния кэша, см.
-  [`../../docs/methodology/environment.md`](../../docs/methodology/environment.md), раздел 6).
+  [`docs/experiments/environment.md`](../../docs/experiments/environment.md), раздел 6).
 
 Точный список всех флагов и их семантику уточняйте по `--help` конкретной
 сборки и по исходному коду — часть параметров генератора графа (раздел 2)
@@ -70,11 +66,11 @@
 
 ```sh
 # "случайная" топология — узлы расположены в файле почти без пространственной локальности
-python3 ../util/graphgen.py -s 64M --seed 427 -o graph-rand.bin
+python3 graphgen.py -s 64M --seed 427 -o graph-rand.bin
 
 # "цепочечная" топология — с ограничением минимального шага между узлами,
 # чтобы не получить тривиальные попадания в одну и ту же страницу памяти
-python3 ../util/graphgen.py -s 64M --seed 427 --topology chain -b 0.7 \
+python3 graphgen.py -s 64M --seed 427 --topology chain -b 0.7 \
   --min-step-pages 2 -o graph-seq.bin
 ```
 
@@ -101,23 +97,22 @@ python3 ../util/graphgen.py -s 64M --seed 427 --topology chain -b 0.7 \
 
 ```sh
 clang -o out/graph_traverse src/graph_traverse.c -Wall -O2
-clang -o out/graph_traverse_mmap src/graph_traverse_mmap.c -Wall -O2
 ```
 
 (если `clang` недоступен, `gcc` собирает те же исходники с теми же флагами).
 
-## 4. Этап 1 (по инструкции): исследование `graph_traverse` (read/lseek)
+## 4. Этап 1: исследование `graph_traverse` (read/lseek)
 
 ### Шаг 4.1. Снять паспорт системы
 
-См. [`../../docs/methodology/monitoring.md`](../../docs/methodology/monitoring.md),
+См. [`docs/experiments/monitoring.md`](../../docs/experiments/monitoring.md),
 раздел «Паспорт системы»: `uname -a`, `lscpu`, `lscpu -e`, `free -h`,
 `lshw`/`smartctl` для диска, `nproc`.
 
 ### Шаг 4.2. Подготовить окружение
 
 Пройдите чек-лист из
-[`../../docs/methodology/environment.md`](../../docs/methodology/environment.md):
+[`docs/experiments/environment.md`](../../docs/experiments/environment.md):
 закрыть фон, зафиксировать governor CPU, закрепить процесс на ядре
 (`taskset`), выбрать методологию состояния кэша.
 
@@ -134,28 +129,16 @@ time ./out/graph_traverse 1 graph-rand.bin
 time ./out/graph_traverse 1 graph-seq.bin
 ```
 
-Пример вывода (в fish-подобном формате time; на Linux аналогично покажет
-`/usr/bin/time -v`, но подробнее — с page faults, context switches и т.д.):
-
-```log
-time ./lab/intro-exp/out/graph_traverse --write 2 graph.bin
-Iteration 1/2 (write): traversing graph.bin ... OK (2796201 nodes processed)
-Iteration 2/2 (write): traversing graph.bin ... OK (2796201 nodes processed)
-________________________________________________________
-Executed in    9.36 secs    fish           external
-   usr time    1.76 secs    0.28 millis    1.76 secs
-   sys time    6.95 secs    1.21 millis    6.95 secs
-```
-
 Обратите внимание на соотношение `usr`/`sys` времени — это и есть метрика
 User/Kernel Time из паспорта эксперимента; для `--write`-режима больших
 `sys time` стоит ожидать больше, чем для чтения, из-за обратной записи
-изменённых страниц.
+изменённых страниц. Определите разницу поведения приложения в разных режимах c
+помощью `strace` [возможно у утилиты есть полезные опции].
 
 Для более детальной картины используйте `/usr/bin/time -v` и `perf stat`
 (события `context-switches`, `cpu-migrations`, `page-faults`,
 `cache-misses`) — см.
-[`../../docs/methodology/monitoring.md`](../../docs/methodology/monitoring.md).
+[`docs/experiments/monitoring.md`](../../docs/experiments/monitoring.md).
 Повторите один из запусков с фоновой нагрузкой (`stress-ng`), чтобы увидеть,
 как выглядит «шумное» измерение — методика та же, что в общей методичке.
 
@@ -163,14 +146,14 @@ User/Kernel Time из паспорта эксперимента; для `--write
 
 Запишите явно, что вы ожидаете и почему, например:
 
-- обход `graph-seq.bin` должен использовать OS readahead и попадать в уже
-  прочитанные/закэшированные страницы чаще — ожидаем **меньшее** время, чем
-  для `graph-rand.bin`;
 - на HDD разница должна быть выражена сильнее, чем на SSD/NVMe, из-за
   времени позиционирования головки;
-- при тёплом кэше и файле, целиком помещающемся в RAM, разница может почти
-  исчезнуть — это стоит учесть при выборе размера графа (`-s`) и режима
-  кэша в шаге 4.2.
+- файл меньшего размера обходится быстрее при любой конфигурации запуска.
+
+Здесь стоит подумать, что на ваш взгляд является важным с точки зрения работы
+операционной системы и выбрать конфигурации запусков, которые вы будете
+сравнивать. Либо использовать условие из вашего варианта задания, выданного
+практиком.
 
 ### Шаг 4.5. Спланировать эксперимент
 
@@ -191,7 +174,7 @@ User/Kernel Time из паспорта эксперимента; для `--write
    stat`/`strace` на каждый запуск).
 
 Как обосновать N и что такое доверительный интервал в этом контексте —
-[`../../docs/methodology/statistics.md`](../../docs/methodology/statistics.md).
+[`docs/experiments/statistics.md`](../../docs/experiments/statistics.md).
 
 ### Шаг 4.6. Зафиксировать окружение перед серией
 
@@ -233,19 +216,25 @@ for i in $(seq 1 $N); do
 done
 ```
 
-Требования к скрипту сбора: сохраняет сырые данные каждого запуска (не
+Требования к скрипту сбора: сохраняет сырые данные каждого запуска[^enough-data] (не
 только среднее); сохраняет достаточно метаданных для воспроизведения
 (имя графа, `--no-cache`/`--write`, число итераций, `taskset`); входит
 целиком в сдаваемые материалы и воспроизводимо запускается на защите.
+
+[^enough-data]: В разумных пределах, конечно же, не нужно хранить десятки-сотни гигабайт логов.
 
 ### Шаг 4.8. Проанализировать измерения
 
 Для `graph-seq.bin` и `graph-rand.bin` посчитайте среднее, стандартное
 отклонение и доверительный интервал (методика —
-[`../../docs/methodology/statistics.md`](../../docs/methodology/statistics.md)).
+[`docs/experiments/statistics.md`](../../docs/experiments/statistics.md)).
 Явно опишите, что сделано с выбросами/прогревом. Постройте столбчатую
 диаграмму средних с усами ДИ — поскольку измерение точечное (не
 зависимость от параметра), развёрнутый график не нужен.
+
+Для большей иллюстративности можно попросить вашего Джарвиса построить график
+распределения. Это может быть наивная гистограмма или более качественный её
+аналог — KDE. Так вы явно увидите различия измерений.
 
 ### Шаг 4.9. Сформулировать вывод
 
@@ -258,7 +247,7 @@ done
 3. **Достаточность**: помогут ли делу ещё N измерений? Оцените (хотя бы
    грубо) по формуле из общей методички.
 
-## 5. Этап 2 (самостоятельно): исследование `graph_traverse_mmap`
+## 5. Этап 2: исследование `graph_traverse_mmap`
 
 Повторите шаги 4.1–4.9 для `graph_traverse_mmap`, самостоятельно написав
 скрипты сбора по аналогии с Этапом 1:
@@ -270,11 +259,8 @@ done
 
 Отличия, на которые стоит обратить внимание:
 
-- у `mmap` нет системного вызова на каждое обращение к узлу — данные
-  попадают в память процесса через **page fault** (minor fault — страница
-  уже в page cache, major fault — реально требуется IO). Основной счётчик,
-  объясняющий разницу `graph-seq` vs `graph-rand` для `mmap`-варианта — не
-  `context-switches`, а `minor/major page faults`;
+- сравните количество contex-switch и page faults для `read()`/`lseek()` и
+  `mmap()` и объясните наблюдение и учтите в замерах;
 - если исходник `graph_traverse_mmap.c` использует `madvise` (например,
   `MADV_SEQUENTIAL`/`MADV_RANDOM`), проверьте это по коду и учтите влияние
   на поведение readahead ядра;
@@ -286,7 +272,7 @@ done
 
 Сведите все четыре серии (`graph_traverse`×`graph-seq`,
 `graph_traverse`×`graph-rand`, `graph_traverse_mmap`×`graph-seq`,
-`graph_traverse_mmap`×`graph-rand`) в одну таблицу и одну диаграмму. Дайте
+`graph_traverse_mmap`×`graph-rand`) в одну таблицу и одну диаграмму/график. Дайте
 общий вывод по работе:
 
 - Какие условия измерения оказались критичными, а чем можно было
@@ -296,11 +282,11 @@ done
 - Насколько интрузивны были сами инструменты измерения? Отличалось ли время
   обхода под `perf stat`/`strace` от времени под «голым» `time`/
   `/usr/bin/time`? См. раздел 8 в
-  [`../../docs/methodology/statistics.md`](../../docs/methodology/statistics.md).
+  [`docs/experiments/statistics.md`](../../docs/experiments/statistics.md).
 
 ## 7. Что сдаётся
 
-1. Файлы графов (или скрипт их генерации + использованные `--seed`) и
+1. Скрипт генерации графов с использованными опциями и
    скрипты сбора измерений (Этап 1 и Этап 2) — должны воспроизводимо
    запускаться.
 2. Сырые данные (CSV или аналогичный формат) по всем 4 сериям.
@@ -324,9 +310,9 @@ done
 ## 9. Дополнительные материалы
 
 - Видео-гайд по постановке экспериментов: <https://youtu.be/0VKhPE1lWos>
-- [`../../docs/methodology/environment.md`](../../docs/methodology/environment.md)
-- [`../../docs/methodology/monitoring.md`](../../docs/methodology/monitoring.md)
-- [`../../docs/methodology/statistics.md`](../../docs/methodology/statistics.md)
+- [`docs/experiments/environment.md`](../../docs/experiments/environment.md)
+- [`docs/experiments/monitoring.md`](../../docs/experiments/monitoring.md)
+- [`docs/experiments/statistics.md`](../../docs/experiments/statistics.md)
 - `man taskset`, `man nice`, `man renice`, `man perf-stat`, `man vmstat`,
   `man mpstat`, `man pidstat`, `man iostat`, `man stress-ng`, `man mmap`,
-  `man 2 madvise`
+  `man 2 madvise` и тд.
