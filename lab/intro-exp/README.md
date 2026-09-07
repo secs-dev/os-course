@@ -7,9 +7,9 @@
 >
 > Общие методические материалы, не привязанные конкретно к этому заданию,
 > вынесены отдельно и переиспользуются и в других лабораторных курса:
-> - [`docs/experiments/environment.md`](../../docs/experiments/environment.md) — настройка и изоляция окружения
-> - [`docs/experiments/monitoring.md`](../../docs/experiments/monitoring.md) — утилиты мониторинга и как читать их вывод
-> - [`docs/experiments/statistics.md`](../../docs/experiments/statistics.md) — доверительные интервалы, выбор N
+> - [`doc/experiments/environment.md`](../../doc/experiments/environment.md) — настройка и изоляция окружения
+> - [`doc/experiments/monitoring.md`](../../doc/experiments/monitoring.md) — утилиты мониторинга и как читать их вывод
+> - [`doc/experiments/statistics.md`](../../doc/experiments/statistics.md) — доверительные интервалы, выбор N
 
 ## 0. Цель работы
 
@@ -53,7 +53,7 @@
 - `--no-cache` — отключить/обойти файловый кэш ОС на время обхода (реализовано
   внутри программы кроссплатформенно для Linux/macOS — предпочитайте этот
   флаг ручному `drop_caches`, если вам нужен контроль состояния кэша, см.
-  [`docs/experiments/environment.md`](../../docs/experiments/environment.md), раздел 6).
+  [`doc/experiments/environment.md`](../../doc/experiments/environment.md), раздел 6).
 
 Точный список всех флагов и их семантику уточняйте по `--help` конкретной
 сборки и по исходному коду — часть параметров генератора графа (раздел 2)
@@ -105,14 +105,14 @@ clang -o out/graph_traverse src/graph_traverse.c -Wall -O2
 
 ### Шаг 4.1. Снять паспорт системы
 
-См. [`docs/experiments/monitoring.md`](../../docs/experiments/monitoring.md),
+См. [`doc/experiments/monitoring.md`](../../doc/experiments/monitoring.md),
 раздел «Паспорт системы»: `uname -a`, `lscpu`, `lscpu -e`, `free -h`,
 `lshw`/`smartctl` для диска, `nproc`.
 
 ### Шаг 4.2. Подготовить окружение
 
 Пройдите чек-лист из
-[`docs/experiments/environment.md`](../../docs/experiments/environment.md):
+[`doc/experiments/environment.md`](../../doc/experiments/environment.md):
 закрыть фон, зафиксировать governor CPU, закрепить процесс на ядре
 (`taskset`), выбрать методологию состояния кэша.
 
@@ -138,7 +138,7 @@ User/Kernel Time из паспорта эксперимента; для `--write
 Для более детальной картины используйте `/usr/bin/time -v` и `perf stat`
 (события `context-switches`, `cpu-migrations`, `page-faults`,
 `cache-misses`) — см.
-[`docs/experiments/monitoring.md`](../../docs/experiments/monitoring.md).
+[`doc/experiments/monitoring.md`](../../doc/experiments/monitoring.md).
 Повторите один из запусков с фоновой нагрузкой (`stress-ng`), чтобы увидеть,
 как выглядит «шумное» измерение — методика та же, что в общей методичке.
 
@@ -174,7 +174,7 @@ User/Kernel Time из паспорта эксперимента; для `--write
    stat`/`strace` на каждый запуск).
 
 Как обосновать N и что такое доверительный интервал в этом контексте —
-[`docs/experiments/statistics.md`](../../docs/experiments/statistics.md).
+[`doc/experiments/statistics.md`](../../doc/experiments/statistics.md).
 
 ### Шаг 4.6. Зафиксировать окружение перед серией
 
@@ -227,7 +227,7 @@ done
 
 Для `graph-seq.bin` и `graph-rand.bin` посчитайте среднее, стандартное
 отклонение и доверительный интервал (методика —
-[`docs/experiments/statistics.md`](../../docs/experiments/statistics.md)).
+[`doc/experiments/statistics.md`](../../doc/experiments/statistics.md)).
 Явно опишите, что сделано с выбросами/прогревом. Постройте столбчатую
 диаграмму средних с усами ДИ — поскольку измерение точечное (не
 зависимость от параметра), развёрнутый график не нужен.
@@ -282,7 +282,7 @@ done
 - Насколько интрузивны были сами инструменты измерения? Отличалось ли время
   обхода под `perf stat`/`strace` от времени под «голым» `time`/
   `/usr/bin/time`? См. раздел 8 в
-  [`docs/experiments/statistics.md`](../../docs/experiments/statistics.md).
+  [`doc/experiments/statistics.md`](../../doc/experiments/statistics.md).
 
 ## 7. Что сдаётся
 
@@ -310,9 +310,9 @@ done
 ## 9. Дополнительные материалы
 
 - Видео-гайд по постановке экспериментов: <https://youtu.be/0VKhPE1lWos>
-- [`docs/experiments/environment.md`](../../docs/experiments/environment.md)
-- [`docs/experiments/monitoring.md`](../../docs/experiments/monitoring.md)
-- [`docs/experiments/statistics.md`](../../docs/experiments/statistics.md)
+- [`doc/experiments/environment.md`](../../doc/experiments/environment.md)
+- [`doc/experiments/monitoring.md`](../../doc/experiments/monitoring.md)
+- [`doc/experiments/statistics.md`](../../doc/experiments/statistics.md)
 - `man taskset`, `man nice`, `man renice`, `man perf-stat`, `man vmstat`,
   `man mpstat`, `man pidstat`, `man iostat`, `man stress-ng`, `man mmap`,
   `man 2 madvise` и тд.
