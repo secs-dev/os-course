@@ -5,24 +5,15 @@
 #include <string.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <limits.h>
-#include <sys/stat.h>
+#include "graph_io.h"
 
 #if defined(__APPLE__)
 #  include <libkern/OSByteOrder.h>
 #  define le32toh(x) OSSwapLittleToHostInt32(x)
 #  define le64toh(x) OSSwapLittleToHostInt64(x)
 #  define htole64(x) OSSwapHostToLittleInt64(x)
-#  include <sys/fcntl.h>
 #else
 #  include <endian.h>
-#endif
-
-#ifdef __linux__
-#  include <linux/fs.h>      /* для O_DIRECT */
 #endif
 
 #define HEADER_SIZE     40
@@ -40,254 +31,9 @@ typedef struct {
     uint32_t flags;
 } __attribute__((packed)) Header;
 
-static int no_cache_mode = 0;
-static off_t graph_size;
-#ifdef __linux__
-static size_t dio_alignment;
-
-static int setup_direct_io(int fd, const struct stat *st)
+static int vertex_offset(const GraphFile *file, uint64_t index, size_t record_size, off_t *offset)
 {
-    size_t alignment = 0;
-#if defined(STATX_DIOALIGN) && defined(AT_EMPTY_PATH)
-    struct statx sx;
-    if (statx(fd, "", AT_EMPTY_PATH, STATX_DIOALIGN, &sx) == 0 &&
-        (sx.stx_mask & STATX_DIOALIGN)) {
-        if (!sx.stx_dio_mem_align || !sx.stx_dio_offset_align) {
-            errno = EOPNOTSUPP;
-            return -1;
-        }
-        alignment = sx.stx_dio_mem_align;
-        if (alignment < sx.stx_dio_offset_align)
-            alignment = sx.stx_dio_offset_align;
-        /* A common power-of-two alignment satisfies both constraints. */
-        if ((sx.stx_dio_mem_align & (sx.stx_dio_mem_align - 1)) ||
-            (sx.stx_dio_offset_align & (sx.stx_dio_offset_align - 1))) {
-            errno = EOPNOTSUPP;
-            return -1;
-        }
-    }
-#endif
-    if (!alignment) {
-        long page = sysconf(_SC_PAGESIZE);
-        if (page <= 0 || st->st_blksize <= 0) {
-            errno = EOPNOTSUPP;
-            return -1;
-        }
-        alignment = (size_t)page;
-        if (alignment < (uintmax_t)st->st_blksize)
-            alignment = (size_t)st->st_blksize;
-        if (alignment % (size_t)page || alignment % (size_t)st->st_blksize) {
-            errno = EOPNOTSUPP;
-            return -1;
-        }
-    }
-    if (alignment < sizeof(void *))
-        alignment = sizeof(void *);
-    if ((alignment & (alignment - 1)) || alignment > SSIZE_MAX) {
-        errno = EOPNOTSUPP;
-        return -1;
-    }
-    dio_alignment = alignment;
-    return 0;
-}
-
-static int seek_to(int fd, off_t offset)
-{
-    off_t result;
-    do {
-        result = lseek(fd, offset, SEEK_SET);
-    } while (result == (off_t)-1 && errno == EINTR);
-    return result == (off_t)-1 ? -1 : 0;
-}
-
-/* Each operation owns its bounce buffer: no data is cached between requests.
- * RMW assumes no concurrent writers/truncation, like the traversal itself. */
-static int direct_transfer(int fd, off_t offset, void *data, size_t size, int writing)
-{
-    size_t skip = (size_t)((uintmax_t)offset % dio_alignment);
-    off_t start = offset - (off_t)skip;
-    if (size > SIZE_MAX - skip ||
-        size + skip > SIZE_MAX - (dio_alignment - 1)) {
-        errno = EOVERFLOW;
-        return -1;
-    }
-    size_t length = (skip + size + dio_alignment - 1) & ~(dio_alignment - 1);
-    if (length > SSIZE_MAX || (uintmax_t)start > INT64_MAX - (uintmax_t)length) {
-        errno = EOVERFLOW;
-        return -1;
-    }
-    void *buffer;
-    int error = posix_memalign(&buffer, dio_alignment, length);
-    if (error) {
-        errno = error;
-        return -1;
-    }
-    memset(buffer, 0, length);
-    size_t needed = length;
-    if ((uintmax_t)(graph_size - start) < needed)
-        needed = (size_t)(graph_size - start);
-    size_t done = 0;
-    if (seek_to(fd, start) < 0) {
-        error = errno;
-        goto out;
-    }
-    while (done < needed) {
-        ssize_t n = read(fd, (char *)buffer + done, length - done);
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0) {
-            error = n < 0 ? errno : EIO;
-            goto out;
-        }
-        done += (size_t)n;
-        if (done < needed && done % dio_alignment) {
-            error = EIO; /* Cannot retry an unaligned short direct transfer. */
-            goto out;
-        }
-    }
-    if (!writing) {
-        memcpy(data, (char *)buffer + skip, size);
-        goto out;
-    }
-    memcpy((char *)buffer + skip, data, size);
-    done = 0;
-    if (seek_to(fd, start) < 0) {
-        error = errno;
-        goto out;
-    }
-    while (done < length) {
-        ssize_t n = write(fd, (char *)buffer + done, length - done);
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0) {
-            error = n < 0 ? errno : EIO;
-            break;
-        }
-        done += (size_t)n;
-        if (done < length && done % dio_alignment) {
-            error = EIO;
-            break;
-        }
-    }
-    /* Restore EOF even after a failed/partial tail write. */
-    if ((uintmax_t)start + length > (uintmax_t)graph_size) {
-        int rc;
-        do {
-            rc = ftruncate(fd, graph_size);
-        } while (rc < 0 && errno == EINTR);
-        if (rc < 0) {
-            error = errno;
-            perror("Failed to restore graph EOF");
-        }
-    }
-out:
-    free(buffer);
-    if (error) {
-        errno = error;
-        return -1;
-    }
-    return 0;
-}
-#endif
-
-static int transfer(int fd, off_t offset, void *data, size_t size, int writing)
-{
-    if (offset < 0 || offset > graph_size ||
-        (uintmax_t)size > (uintmax_t)(graph_size - offset)) {
-        errno = EIO;
-        return -1;
-    }
-#ifdef __linux__
-    if (no_cache_mode) {
-        int rc = direct_transfer(fd, offset, data, size, writing);
-        if (rc < 0)
-            perror("--no-cache direct I/O failed (no buffered fallback)");
-        return rc;
-    }
-#endif
-    off_t pos;
-    do {
-        pos = lseek(fd, offset, SEEK_SET);
-    } while (pos == (off_t)-1 && errno == EINTR);
-    if (pos == (off_t)-1)
-        return -1;
-    size_t done = 0;
-    while (done < size) {
-        ssize_t n = writing ? write(fd, (char *)data + done, size - done)
-                            : read(fd, (char *)data + done, size - done);
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0) {
-            if (n == 0)
-                errno = EIO;
-            return -1;
-        }
-        done += (size_t)n;
-    }
-    return 0;
-}
-
-/*
- * Открытие файла с учётом режима (read-only или read-write) и опции no-cache.
- * Возвращает дескриптор или -1 при ошибке.
- */
-static int open_graph_file(const char *filename, int write_mode)
-{
-#if !defined(__linux__) && !defined(__APPLE__)
-    if (no_cache_mode) {
-        fprintf(stderr, "--no-cache is supported only on Linux and macOS\n");
-        errno = EOPNOTSUPP;
-        return -1;
-    }
-#endif
-    int flags = write_mode ? O_RDWR : O_RDONLY;
-#ifdef __linux__
-    if (no_cache_mode)
-        flags |= O_DIRECT;
-#endif
-
-    int fd = open(filename, flags);
-    if (fd == -1) {
-        if (no_cache_mode)
-            perror("--no-cache open failed (no buffered fallback)");
-        return -1;
-    }
-
-    struct stat st;
-    if (fstat(fd, &st) < 0)
-        goto fail;
-    if (!S_ISREG(st.st_mode) || st.st_size < HEADER_SIZE) {
-        errno = EINVAL;
-        goto fail;
-    }
-    graph_size = st.st_size;
-
-#if defined(__APPLE__)
-    if (no_cache_mode) {
-        /* Отключаем кэширование на macOS */
-        if (fcntl(fd, F_NOCACHE, 1) == -1)
-            goto fail;
-    }
-#elif defined(__linux__)
-    if (no_cache_mode && setup_direct_io(fd, &st) < 0)
-        goto fail;
-#endif
-
-    return fd;
-fail:
-    {
-        int saved = errno;
-        if (no_cache_mode)
-            perror("--no-cache setup failed (no buffered fallback)");
-        close(fd);
-        errno = saved;
-        return -1;
-    }
-}
-
-static int vertex_offset(uint64_t index, size_t record_size, off_t *offset)
-{
-    if (!record_size || index > ((uintmax_t)graph_size - HEADER_SIZE) / record_size) {
+    if (!record_size || index > ((uintmax_t)file->size - HEADER_SIZE) / record_size) {
         errno = EOVERFLOW;
         return -1;
     }
@@ -299,15 +45,15 @@ static int vertex_offset(uint64_t index, size_t record_size, off_t *offset)
  * Чтение вершины с использованием lseek + read (без pread).
  * Буфер фиксирован (24 байта).
  */
-static int read_vertex(int fd, uint64_t index, size_t record_size,
+static int read_vertex(GraphFile *file, uint64_t index, size_t record_size,
                        int64_t *value, uint32_t *degree, uint64_t *child)
 {
     off_t offset;
-    if (vertex_offset(index, record_size, &offset) < 0)
+    if (vertex_offset(file, index, record_size, &offset) < 0)
         return -1;
 
     unsigned char buf[24];
-    if (transfer(fd, offset, buf, sizeof(buf), 0) < 0)
+    if (graph_read(file, offset, buf, sizeof(buf)) < 0)
         return -1;
 
     memcpy(value, buf, 8);
@@ -327,14 +73,14 @@ static int read_vertex(int fd, uint64_t index, size_t record_size,
 /*
  * Запись нового значения вершины (только поле value) с использованием lseek + write.
  */
-static int write_value(int fd, uint64_t index, size_t record_size, int64_t new_value)
+static int write_value(GraphFile *file, uint64_t index, size_t record_size, int64_t new_value)
 {
     off_t offset;
-    if (vertex_offset(index, record_size, &offset) < 0)
+    if (vertex_offset(file, index, record_size, &offset) < 0)
         return -1;
 
     uint64_t value_le = htole64((uint64_t)new_value);
-    return transfer(fd, offset, &value_le, sizeof(value_le), 1);
+    return graph_write(file, offset, &value_le, sizeof(value_le));
 }
 
 /*
@@ -342,25 +88,25 @@ static int write_value(int fd, uint64_t index, size_t record_size, int64_t new_v
  * Если write_mode != 0, то значение каждой посещённой вершины обновляется (инкремент).
  * Возвращает количество пройденных вершин или -1 при ошибке.
  */
-static int64_t traverse_chain(const char *filename, int write_mode)
+static int64_t traverse_chain(const char *filename, int write_mode, int no_cache_mode)
 {
-    int fd = open_graph_file(filename, write_mode);
-    if (fd == -1) {
-        perror("open_graph_file");
+    GraphFile file;
+    if (graph_open(&file, filename, write_mode, no_cache_mode) < 0) {
+        perror("graph_open");
         return -1;
     }
 
     /* Чтение заголовка */
     Header header;
-    if (transfer(fd, 0, &header, sizeof(header), 0) < 0) {
+    if (graph_read(&file, 0, &header, sizeof(header)) < 0) {
         fprintf(stderr, "Failed to read header from %s\n", filename);
-        close(fd);
+        graph_close(&file);
         return -1;
     }
 
     if (memcmp(header.magic, MAGIC, MAGIC_LEN) != 0) {
         fprintf(stderr, "Invalid magic number in %s\n", filename);
-        close(fd);
+        graph_close(&file);
         return -1;
     }
 
@@ -371,21 +117,21 @@ static int64_t traverse_chain(const char *filename, int write_mode)
 
     if (fan_out != 1) {
         fprintf(stderr, "Error: fan_out = %u in %s, expected 1\n", fan_out, filename);
-        close(fd);
+        graph_close(&file);
         return -1;
     }
 
     if (record_size < 24 || node_count > INT64_MAX ||
-        node_count > ((uintmax_t)graph_size - HEADER_SIZE) / record_size) {
+        node_count > ((uintmax_t)file.size - HEADER_SIZE) / record_size) {
         fprintf(stderr, "Invalid record size, node count, or truncated graph in %s\n", filename);
-        close(fd);
+        graph_close(&file);
         return -1;
     }
 
     if (root_index >= node_count) {
         fprintf(stderr, "Error: root_index %" PRIu64 " >= node_count %" PRIu64 " in %s\n",
                 root_index, node_count, filename);
-        close(fd);
+        graph_close(&file);
         return -1;
     }
 
@@ -397,19 +143,19 @@ static int64_t traverse_chain(const char *filename, int write_mode)
         uint32_t degree;
         uint64_t child;
 
-        if (read_vertex(fd, current, record_size, &value, &degree, &child) != 0) {
+        if (read_vertex(&file, current, record_size, &value, &degree, &child) != 0) {
             fprintf(stderr, "Error reading vertex at index %" PRIu64 " in %s\n",
                     current, filename);
-            close(fd);
+            graph_close(&file);
             return -1;
         }
 
         if (write_mode) {
             int64_t new_value = (int64_t)((uint64_t)value + UINT64_C(1));
-            if (write_value(fd, current, record_size, new_value) != 0) {
+            if (write_value(&file, current, record_size, new_value) != 0) {
                 fprintf(stderr, "Error writing value at index %" PRIu64 " in %s\n",
                         current, filename);
-                close(fd);
+                graph_close(&file);
                 return -1;
             }
         }
@@ -420,7 +166,7 @@ static int64_t traverse_chain(const char *filename, int write_mode)
         if (child >= node_count) {
             fprintf(stderr, "Error: child %" PRIu64 " out of range in %s\n",
                     child, filename);
-            close(fd);
+            graph_close(&file);
             return -1;
         }
 
@@ -429,12 +175,12 @@ static int64_t traverse_chain(const char *filename, int write_mode)
 
         if (steps >= node_count) {
             fprintf(stderr, "Possible cycle detected in %s\n", filename);
-            close(fd);
+            graph_close(&file);
             return -1;
         }
     }
 
-    if (close(fd) < 0) {
+    if (graph_close(&file) < 0) {
         perror("close graph");
         return -1;
     }
@@ -444,6 +190,7 @@ static int64_t traverse_chain(const char *filename, int write_mode)
 int main(int argc, char **argv)
 {
     int write_mode = 0;
+    int no_cache_mode = 0;
     int iter_pos = 1;
 
     /* Разбор аргументов: сначала обрабатываем флаги --write и --no-cache */
@@ -483,7 +230,7 @@ int main(int argc, char **argv)
 
         fprintf(stderr, "Iteration %" PRIu64 "/%" PRIu64 " (%s): traversing %s ... ",
                 i + 1, iterations, write_mode ? "write" : "read", fname);
-        int64_t nodes = traverse_chain(fname, write_mode);
+        int64_t nodes = traverse_chain(fname, write_mode, no_cache_mode);
         if (nodes < 0) {
             fprintf(stderr, "FAILED\n");
             return 1;
