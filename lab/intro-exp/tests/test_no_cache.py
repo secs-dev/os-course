@@ -1,4 +1,4 @@
-"""Run with python3 lab/intro-exp/test_no_cache.py on Linux or macOS.
+"""Run with python3 lab/intro-exp/tests/test_no_cache.py on Linux or macOS.
 
 Linux requires a filesystem supporting O_DIRECT in the temporary directory.
 Set TMPDIR to such a filesystem if necessary; unsupported I/O fails the test.
@@ -15,7 +15,7 @@ import unittest
 
 class NoCacheTest(unittest.TestCase):
     def test_traversal(self):
-        source = Path(__file__).resolve().parent / "src"
+        source = Path(__file__).resolve().parent.parent / "src"
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             for name in ("graph_traverse", "graph_traverse_mmap"):
