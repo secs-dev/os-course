@@ -10,7 +10,10 @@
 #include <sys/stat.h>
 
 #if defined(__APPLE__)
-#  include <sys/endian.h>
+#  include <libkern/OSByteOrder.h>
+#  define le32toh(x) OSSwapLittleToHostInt32(x)
+#  define le64toh(x) OSSwapLittleToHostInt64(x)
+#  define htole64(x) OSSwapHostToLittleInt64(x)
 #else
 #  include <endian.h>
 #endif
@@ -158,8 +161,13 @@ static int64_t traverse_chain_mmap(const char *filename, int write_mode)
         }
     }
 
-    /* Освобождаем страницы из кэша (если включено) */
+    /* Advisory only: mmap still uses the page cache. Flush dirty pages first. */
     if (no_cache_mode) {
+        if (write_mode && msync(data, file_size, MS_SYNC) != 0) {
+            perror("msync");
+            munmap(data, file_size);
+            return -1;
+        }
 #if defined(__linux__) || defined(__APPLE__)
         if (madvise(data, file_size, MADV_DONTNEED) != 0)
             perror("madvise(MADV_DONTNEED)");
@@ -190,7 +198,7 @@ int main(int argc, char **argv)
     if (argc - iter_pos < 2) {
         fprintf(stderr, "Usage: %s [--write] [--no-cache] <num_iterations> <graph_file1> ...\n"
                         "  --write     : update vertex values (write load)\n"
-                        "  --no-cache  : use madvise to reduce caching\n", argv[0]);
+                        "  --no-cache  : advisory madvise only; mmap still uses the page cache\n", argv[0]);
         return 1;
     }
 
