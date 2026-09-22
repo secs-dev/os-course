@@ -12,7 +12,17 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* One file, one reusable scratch allocation; no cached file data.
+/* --no-cache requests Linux O_DIRECT or macOS F_NOCACHE; FreeBSD O_DIRECT
+ * is advisory (see open(2)) and may be ignored by the filesystem. Other OSes
+ * are unsupported. Open/setup/I/O failures never trigger a buffered fallback.
+ * This neither clears the system-wide cache nor disables the drive's cache.
+ *
+ * Linux direct I/O requires aligned buffer addresses, offsets, and lengths.
+ * We keep the graph format unchanged by reading covering blocks and using
+ * read-modify-write for value updates, preserving neighboring bytes and EOF.
+ * These extra transfers increase I/O volume compared with buffered traversal.
+ *
+ * One file, one reusable scratch allocation; no cached file data.
  * The caller must exclude concurrent writers and truncation. */
 typedef struct {
     int fd;
@@ -41,6 +51,8 @@ static int graph_setup_direct_io(GraphFile *file, const struct stat *st)
     }
 #endif
     if (!alignment) {
+        /* Without statx alignment data, try a conservative page/block multiple;
+         * a filesystem that rejects it will fail I/O rather than use a fallback. */
         long page = sysconf(_SC_PAGESIZE);
         if (page <= 0 || st->st_blksize <= 0 ||
             (uintmax_t)st->st_blksize > SIZE_MAX) {

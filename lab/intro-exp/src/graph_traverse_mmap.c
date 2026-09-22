@@ -83,7 +83,10 @@ static int map_graph_file(const char *filename, int write_mode, MappedFile *file
 
 static void prepare_mapping(const MappedFile *file)
 {
-    /* Advisory only: this changes readahead, not whether mmap uses the cache. */
+    /* --no-cache is advisory here: mmap still uses the page cache, unlike
+     * Linux O_DIRECT. Neither hint guarantees a cold cache or clears the
+     * system-wide/drive cache. MADV_SEQUENTIAL affects readahead even for a
+     * randomly linked chain, so this is not just a change in cache retention. */
     if (no_cache_mode) {
 #if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
         if (madvise(file->data, file->size, MADV_SEQUENTIAL) != 0)
@@ -187,7 +190,9 @@ static int64_t traverse_mapped_chain(const MappedFile *file, const Header *heade
 
 static int finish_mapping(const MappedFile *file, int write_mode)
 {
-    /* Advisory only: mmap still uses the page cache. Flush dirty pages first. */
+    /* Flush dirty pages before the advisory MADV_DONTNEED; the synchronous
+     * writeback cost is included in the measured run with --write --no-cache.
+     * MADV_DONTNEED does not guarantee eviction from the file page cache. */
     if (no_cache_mode) {
         if (write_mode && msync(file->data, file->size, MS_SYNC) != 0) {
             perror("msync");
