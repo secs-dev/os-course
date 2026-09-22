@@ -12,6 +12,8 @@
 #  define le32toh(x) OSSwapLittleToHostInt32(x)
 #  define le64toh(x) OSSwapLittleToHostInt64(x)
 #  define htole64(x) OSSwapHostToLittleInt64(x)
+#elif defined(__FreeBSD__)
+#  include <sys/endian.h>
 #else
 #  include <endian.h>
 #endif
@@ -210,7 +212,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Usage: %s [--write] [--no-cache] <num_iterations> <graph_file1> [graph_file2 ...]\n",
                 argv[0]);
         fprintf(stderr, "  --write     : update vertex values (write load)\n");
-        fprintf(stderr, "  --no-cache  : disable system cache (O_DIRECT on Linux, F_NOCACHE on macOS; unsupported elsewhere)\n");
+        fprintf(stderr, "  --no-cache  : request cache bypass/minimization (Linux O_DIRECT, macOS F_NOCACHE, FreeBSD O_DIRECT advisory; unsupported elsewhere)\n");
         return 1;
     }
 

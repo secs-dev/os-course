@@ -14,6 +14,8 @@
 #  define le32toh(x) OSSwapLittleToHostInt32(x)
 #  define le64toh(x) OSSwapLittleToHostInt64(x)
 #  define htole64(x) OSSwapHostToLittleInt64(x)
+#elif defined(__FreeBSD__)
+#  include <sys/endian.h>
 #else
 #  include <endian.h>
 #endif
@@ -83,7 +85,7 @@ static void prepare_mapping(const MappedFile *file)
 {
     /* Advisory only: this changes readahead, not whether mmap uses the cache. */
     if (no_cache_mode) {
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
         if (madvise(file->data, file->size, MADV_SEQUENTIAL) != 0)
             perror("madvise(MADV_SEQUENTIAL)");
 #endif
@@ -191,7 +193,7 @@ static int finish_mapping(const MappedFile *file, int write_mode)
             perror("msync");
             return -1;
         }
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
         if (madvise(file->data, file->size, MADV_DONTNEED) != 0)
             perror("madvise(MADV_DONTNEED)");
 #endif

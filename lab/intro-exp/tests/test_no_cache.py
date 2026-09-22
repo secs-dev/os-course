@@ -1,7 +1,9 @@
-"""Run with python3 lab/intro-exp/tests/test_no_cache.py on Linux or macOS.
+"""Run with python3 lab/intro-exp/tests/test_no_cache.py on Linux, macOS, or FreeBSD.
 
 Linux requires a filesystem supporting O_DIRECT in the temporary directory.
 Set TMPDIR to such a filesystem if necessary; unsupported I/O fails the test.
+FreeBSD O_DIRECT is advisory and filesystem-dependent; these tests verify
+traversal and file contents, not whether the OS bypasses its cache.
 """
 import os
 from pathlib import Path

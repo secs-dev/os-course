@@ -17,7 +17,7 @@
 typedef struct {
     int fd;
     off_t size;
-    size_t alignment;       /* Zero for ordinary I/O (including F_NOCACHE). */
+    size_t alignment;       /* Nonzero only for Linux aligned O_DIRECT I/O. */
     unsigned char *buffer;
 } GraphFile;
 
@@ -76,15 +76,17 @@ static int graph_setup_direct_io(GraphFile *file, const struct stat *st)
 static int graph_open(GraphFile *file, const char *path, int writing, int no_cache)
 {
     *file = (GraphFile){ .fd = -1 };
-#if !defined(__linux__) && !defined(__APPLE__)
+#if !defined(__linux__) && !defined(__APPLE__) && !defined(__FreeBSD__)
     if (no_cache) {
-        fprintf(stderr, "--no-cache is supported only on Linux and macOS\n");
+        fprintf(stderr, "--no-cache is supported only on Linux, macOS, and FreeBSD\n");
         errno = EOPNOTSUPP;
         return -1;
     }
 #endif
     int flags = writing ? O_RDWR : O_RDONLY;
-#ifdef __linux__
+#if defined(__linux__) || defined(__FreeBSD__)
+    /* FreeBSD open(2): best-effort cache minimization, filesystem-dependent.
+     * Keep ordinary transfers there; aligned scratch I/O is Linux-only. */
     if (no_cache)
         flags |= O_DIRECT;
 #endif
