@@ -1,4 +1,4 @@
-#define _GNU_SOURCE          /* для O_DIRECT на Linux */
+#define _GNU_SOURCE          /* для posix_fadvise на Linux */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,10 +13,6 @@
 #  include <sys/fcntl.h>
 #else
 #  include <endian.h>
-#endif
-
-#ifdef __linux__
-#  include <linux/fs.h>      /* для O_DIRECT */
 #endif
 
 #ifdef _WIN32
@@ -55,10 +51,6 @@ static int no_cache_mode = 0;
 static int open_graph_file(const char *filename, int write_mode)
 {
     int flags = write_mode ? O_RDWR : O_RDONLY;
-#ifdef __linux__
-    if (no_cache_mode)
-        flags |= O_DIRECT;
-#endif
 
     int fd = open(filename, flags);
     if (fd == -1)
@@ -74,7 +66,16 @@ static int open_graph_file(const char *filename, int write_mode)
         }
     }
 #elif defined(__linux__)
-    /* Для Linux O_DIRECT уже установлен, ничего дополнительно не нужно */
+    if (no_cache_mode) {
+        /* Сбрасываем грязные страницы, иначе DONTNEED их не выкинет, затем вычищаем файл из page cache */
+        fdatasync(fd);
+        int err = posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+        if (err != 0) {
+            close(fd);
+            errno = err;
+            return -1;
+        }
+    }
 #elif defined(_WIN32)
     /* Для Windows используем CreateFile с FILE_FLAG_NO_BUFFERING */
     if (no_cache_mode) {
@@ -272,7 +273,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Usage: %s [--write] [--no-cache] <num_iterations> <graph_file1> [graph_file2 ...]\n",
                 argv[0]);
         fprintf(stderr, "  --write     : update vertex values (write load)\n");
-        fprintf(stderr, "  --no-cache  : disable system cache (O_DIRECT on Linux, F_NOCACHE on macOS, FILE_FLAG_NO_BUFFERING on Windows)\n");
+        fprintf(stderr, "  --no-cache  : disable system cache (posix_fadvise DONTNEED on Linux, F_NOCACHE on macOS, FILE_FLAG_NO_BUFFERING on Windows)\n");
         return 1;
     }
 

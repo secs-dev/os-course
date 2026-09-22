@@ -46,6 +46,19 @@ static int64_t traverse_chain_mmap(const char *filename, int write_mode)
         return -1;
     }
 
+#ifdef __linux__
+    if (no_cache_mode) {
+        /* Сбрасываем грязные страницы, иначе DONTNEED их не выкинет, затем вычищаем файл из page cache */
+        fdatasync(fd);
+        int err = posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+        if (err != 0) {
+            fprintf(stderr, "posix_fadvise: %s\n", strerror(err));
+            close(fd);
+            return -1;
+        }
+    }
+#endif
+
     struct stat st;
     if (fstat(fd, &st) != 0) {
         perror("fstat");
