@@ -10,6 +10,11 @@
 #include <sys/stat.h>
 
 #if defined(__APPLE__)
+#  include <libkern/OSByteOrder.h>
+#  define le32toh(x) OSSwapLittleToHostInt32(x)
+#  define le64toh(x) OSSwapLittleToHostInt64(x)
+#  define htole64(x) OSSwapHostToLittleInt64(x)
+#elif defined(__FreeBSD__)
 #  include <sys/endian.h>
 #else
 #  include <endian.h>
@@ -32,12 +37,12 @@ typedef struct {
 
 static int no_cache_mode = 0;
 
-/*
- * Обход графа-цепи с использованием mmap.
- * Если write_mode != 0, значение каждой посещённой вершины инкрементируется.
- * Возвращает количество обработанных вершин или -1 при ошибке.
- */
-static int64_t traverse_chain_mmap(const char *filename, int write_mode)
+typedef struct {
+    unsigned char *data;
+    size_t size;
+} MappedFile;
+
+static int map_graph_file(const char *filename, int write_mode, MappedFile *file)
 {
     int oflags = write_mode ? O_RDWR : O_RDONLY;
     int fd = open(filename, oflags);
@@ -71,18 +76,32 @@ static int64_t traverse_chain_mmap(const char *filename, int write_mode)
     }
     close(fd);  /* после mmap дескриптор больше не нужен */
 
-    /* Подсказки ядру при включённом --no-cache */
+    file->data = data;
+    file->size = file_size;
+    return 0;
+}
+
+static void prepare_mapping(const MappedFile *file)
+{
+    /* --no-cache is advisory here: mmap still uses the page cache, unlike
+     * Linux O_DIRECT. Neither hint guarantees a cold cache or clears the
+     * system-wide/drive cache. MADV_SEQUENTIAL affects readahead even for a
+     * randomly linked chain, so this is not just a change in cache retention. */
     if (no_cache_mode) {
-#if defined(__linux__) || defined(__APPLE__)
-        if (madvise(data, file_size, MADV_SEQUENTIAL) != 0)
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
+        if (madvise(file->data, file->size, MADV_SEQUENTIAL) != 0)
             perror("madvise(MADV_SEQUENTIAL)");
 #endif
     }
 
-    Header *hdr = (Header*)data;
+}
+
+static int read_graph_header(const MappedFile *file, const char *filename, Header *header)
+{
+    memcpy(header, file->data, sizeof(*header));
+    Header *hdr = header;
     if (memcmp(hdr->magic, MAGIC, MAGIC_LEN) != 0) {
         fprintf(stderr, "Invalid magic in %s\n", filename);
-        munmap(data, file_size);
         return -1;
     }
 
@@ -93,7 +112,6 @@ static int64_t traverse_chain_mmap(const char *filename, int write_mode)
 
     if (fan_out != 1) {
         fprintf(stderr, "fan_out = %u (expected 1) in %s\n", fan_out, filename);
-        munmap(data, file_size);
         return -1;
     }
 
@@ -103,22 +121,33 @@ static int64_t traverse_chain_mmap(const char *filename, int write_mode)
     if (root_index >= node_count) {
         fprintf(stderr, "root_index %" PRIu64 " >= node_count %" PRIu64 " in %s\n",
                 root_index, node_count, filename);
-        munmap(data, file_size);
         return -1;
     }
 
-    uint64_t current = root_index;
+    header->node_count = node_count;
+    header->record_size = record_size;
+    header->fan_out = fan_out;
+    header->root_index = root_index;
+    return 0;
+}
+
+/* Header fields used here have already been converted to host byte order. */
+static int64_t traverse_mapped_chain(const MappedFile *file, const Header *header,
+                                     const char *filename, int write_mode)
+{
+    uint64_t node_count = header->node_count;
+    uint32_t record_size = header->record_size;
+    uint64_t current = header->root_index;
     uint64_t steps = 0;
 
     while (1) {
         off_t offset = HEADER_SIZE + current * record_size;
-        if (offset + 24 > (off_t)file_size) {
+        if (offset + 24 > (off_t)file->size) {
             fprintf(stderr, "Vertex %" PRIu64 " out of file bounds\n", current);
-            munmap(data, file_size);
             return -1;
         }
 
-        unsigned char *p = data + offset;
+        unsigned char *p = file->data + offset;
 
         int64_t value;
         memcpy(&value, p, 8);
@@ -145,7 +174,6 @@ static int64_t traverse_chain_mmap(const char *filename, int write_mode)
 
         if (child >= node_count) {
             fprintf(stderr, "child %" PRIu64 " out of range in %s\n", child, filename);
-            munmap(data, file_size);
             return -1;
         }
 
@@ -153,21 +181,53 @@ static int64_t traverse_chain_mmap(const char *filename, int write_mode)
         steps++;
         if (steps > node_count) {
             fprintf(stderr, "Possible cycle in %s\n", filename);
-            munmap(data, file_size);
             return -1;
         }
     }
 
-    /* Освобождаем страницы из кэша (если включено) */
+    return (int64_t)(steps + 1);
+}
+
+static int finish_mapping(const MappedFile *file, int write_mode)
+{
+    /* Flush dirty pages before the advisory MADV_DONTNEED; the synchronous
+     * writeback cost is included in the measured run with --write --no-cache.
+     * MADV_DONTNEED does not guarantee eviction from the file page cache. */
     if (no_cache_mode) {
-#if defined(__linux__) || defined(__APPLE__)
-        if (madvise(data, file_size, MADV_DONTNEED) != 0)
+        if (write_mode && msync(file->data, file->size, MS_SYNC) != 0) {
+            perror("msync");
+            return -1;
+        }
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
+        if (madvise(file->data, file->size, MADV_DONTNEED) != 0)
             perror("madvise(MADV_DONTNEED)");
 #endif
     }
 
-    munmap(data, file_size);
-    return (int64_t)(steps + 1);
+    return 0;
+}
+
+static int64_t traverse_chain_mmap(const char *filename, int write_mode)
+{
+    MappedFile file;
+    if (map_graph_file(filename, write_mode, &file) < 0)
+        return -1;
+
+    prepare_mapping(&file);
+
+    Header header;
+    int64_t nodes = -1;
+    if (read_graph_header(&file, filename, &header) == 0)
+        nodes = traverse_mapped_chain(&file, &header, filename, write_mode);
+    if (nodes >= 0 && finish_mapping(&file, write_mode) < 0)
+        nodes = -1;
+
+    /* This function owns the mapping, including cleanup after any failed stage. */
+    if (munmap(file.data, file.size) != 0) {
+        perror("munmap");
+        return -1;
+    }
+    return nodes;
 }
 
 int main(int argc, char **argv)
@@ -190,7 +250,7 @@ int main(int argc, char **argv)
     if (argc - iter_pos < 2) {
         fprintf(stderr, "Usage: %s [--write] [--no-cache] <num_iterations> <graph_file1> ...\n"
                         "  --write     : update vertex values (write load)\n"
-                        "  --no-cache  : use madvise to reduce caching\n", argv[0]);
+                        "  --no-cache  : advisory madvise only; mmap still uses the page cache\n", argv[0]);
         return 1;
     }
 
