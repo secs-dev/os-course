@@ -6,8 +6,8 @@ TIME_FIELDS='Elapsed|User time|System time|Voluntary context switches|Involuntar
 
 # Компилируем обходчики графа
 mkdir -p out
-gcc -Wall -O2 ../intro-exp/src/graph_traverse.c -o out/graph_traverse
-gcc -Wall -O2 ../intro-exp/src/graph_traverse_mmap.c -o out/graph_traverse_mmap
+gcc -Wall -O2 ../../intro-exp/src/graph_traverse.c -o out/graph_traverse
+gcc -Wall -O2 ../../intro-exp/src/graph_traverse_mmap.c -o out/graph_traverse_mmap
 
 # Генерируем графы с разной локальностью
 mkdir -p graphs
@@ -16,7 +16,7 @@ mkdir -p graphs
 
 # Тест 1: высокая локальность
 echo "===== Генерация graph-0-1 ====="
-python3 graphgen.py \
+python3 ../graphgen.py \
     -s 64M \
     --seed 427 \
     --topology chain \
@@ -26,7 +26,7 @@ python3 graphgen.py \
 
 # Тест 2: средняя локальность
 echo "===== Генерация graph-0-10 ====="
-python3 graphgen.py \
+python3 ../graphgen.py \
     -s 64M \
     --seed 427 \
     --topology chain \
@@ -36,7 +36,7 @@ python3 graphgen.py \
 
 # Тест 3: без ограничения сверху
 echo "===== Генерация graph-0-none ====="
-python3 graphgen.py \
+python3 ../graphgen.py \
     -s 64M \
     --seed 427 \
     --topology chain \
@@ -45,7 +45,7 @@ python3 graphgen.py \
 
 # Тест 4: минимальный шаг 2 страницы, без ограничения сверху
 echo "===== Генерация graph-2-none ====="
-python3 graphgen.py \
+python3 ../graphgen.py \
     -s 64M \
     --seed 427 \
     --topology chain \
