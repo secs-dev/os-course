@@ -80,21 +80,34 @@ N записей вершин ФИКСИРОВАННОГО размера, ид�
    пути, а не ошибка. Фактически достигнутое соотношение печатается по
    завершении генерации.
 
-3. Гарантия кэш-промаха для "случайных" переходов (--page-size,
-   --min-step-pages).
-   Так как несколько записей вершины помещаются в одну страницу (обычно
-   4 КиБ), переход в СОСЕДНИЙ по индексу узел может попасть в уже
-   прочитанную/закэшированную страницу и НЕ вызвать промах. Поэтому среди
-   кандидатов нужного направления генератор в первую очередь ищет такого,
-   чья дистанция от источника (в узлах) не меньше:
+3. Управление дистанцией переходов (--page-size,
+   --min-step-pages, --max-step-pages).
+
+   Расстояние между вершинами задаётся в страницах и переводится
+   в расстояние между индексами узлов:
 
        min_step_nodes = ceil(page_size * min_step_pages / record_size)
+       max_step_nodes = floor(page_size * max_step_pages / record_size)
 
-   т.е. переход гарантированно пересекает границу как минимум
-   `min_step_pages` страниц. Если подходящего по дистанции кандидата нет
-   (бывает под конец генерации, когда свободных вершин мало), требование
-   по дистанции мягко ослабляется — итоговая доля "коротких" переходов
-   печатается в статистике по завершении генерации.
+   При генерации в первую очередь выбирается вершина, для которой:
+
+       min_step_nodes <= |next - current| <= max_step_nodes
+
+   Таким образом, min_step_pages задаёт нижнюю границу расстояния,
+   а max_step_pages — верхнюю границу.
+
+   Если --max-step-pages не задан, верхняя граница отсутствует:
+   max_step_nodes устанавливается равным node_count - 1.
+   Это сохраняет совместимость со старым поведением генератора,
+   в котором задавалась только минимальная дистанция.
+
+   Если подходящего кандидата в заданном диапазоне нет, генератор
+   сначала ослабляет ограничение по дистанции, сохраняя требуемое
+   направление, а затем при необходимости выбирает любую доступную
+   вершину.
+
+   Фактическая доля переходов, попавших в заданный диапазон,
+   выводится в статистике после генерации.
 
 4. Ветвление (--fanout) и глубина.
    `fan_out` ограничивает исходящую степень (сколько раз узел может быть
@@ -251,7 +264,7 @@ def parse_size(text: str) -> int:
 
 
 # --------------------------------------------------------------------------
-# Расчёт раскладки (record_size / node_count / min_step_nodes) — общий для
+# Расчёт раскладки (record_size / node_count / min_step_nodes / max_step_nodes) — общий для
 # реальной генерации и для режима "только описание структуры" (--describe-only)
 # --------------------------------------------------------------------------
 def compute_layout(args, quiet: bool = False):
@@ -277,10 +290,36 @@ def compute_layout(args, quiet: bool = False):
             )
         min_step_nodes = max(1, node_count // 4)
 
+
+    if args.max_step_pages is None:
+        # Если не задано, то поведение повторяет поведение старой версии: max_step_nodes = node_count - 1
+        max_step_nodes = node_count - 1
+    else:
+        max_step_nodes = math.floor(args.page_size * args.max_step_pages / record_size)
+
+    if max_step_nodes >= node_count:
+        if not quiet:
+            print(
+                f"[предупреждение] max_step_nodes ({max_step_nodes}) >= node_count "
+                f"({node_count}); ограничиваем max_step_nodes размером графа ",
+                file=sys.stderr,
+            )
+        max_step_nodes = node_count - 1
+    
+    if max_step_nodes < min_step_nodes:
+        if not quiet:
+            print(
+                f"[предупреждение] min_step_nodes ({min_step_nodes}) >= max_step_nodes ({max_step_nodes})",
+                file=sys.stderr,
+            )
+        max_step_nodes = min_step_nodes
+
+
     return {
         "record_size": record_size,
         "node_count": node_count,
         "min_step_nodes": min_step_nodes,
+        "max_step_nodes": max_step_nodes
     }
 
 
@@ -294,19 +333,20 @@ def render_c_struct(args, layout: dict) -> str:
     record_size = layout["record_size"]
     node_count = layout["node_count"]
     min_step_nodes = layout["min_step_nodes"]
-
+    max_step_nodes = layout["max_step_nodes"]
     return f"""\
 /* ------------------------------------------------------------------------
  * Автоматически сгенерировано graphgen.py для текущих параметров:
  *   size={args.size}  fanout={fanout}  backprob={args.backprob}
- *   page_size={args.page_size}  min_step_pages={args.min_step_pages}
+ *   page_size={args.page_size}  min_step_pages={args.min_step_pages}  max_step_pages={args.max_step_pages}
  *   seed={getattr(args, "seed", "N/A")}
  *
  *   node_count      = {node_count}
  *   record_size     = {record_size} байт
  *   min_step_nodes  = {min_step_nodes} (~{min_step_nodes * record_size} байт)
+ *   max_step_nodes  = {max_step_nodes} (~{max_step_nodes * record_size} байт)
  *
- *   ВНИМАНИЕ: page_size/backprob/seed/min_step_nodes НЕ хранятся в самом
+ *   ВНИМАНИЕ: page_size/backprob/seed/min_step_nodes и max_step_nodes НЕ хранятся в самом
  *   файле (сознательно, чтобы читающая программа не могла подстроиться
  *   под гиперпараметры генерации) — они есть только здесь, в этом
  *   сгенерированном для СБОРКИ снипете, и в консольном выводе генератора.
@@ -324,7 +364,7 @@ def render_c_struct(args, layout: dict) -> str:
 #pragma pack(push, 1)
 
 /* Заголовок файла, ровно 40 байт, little-endian, без выравнивания.
- * Гиперпараметры генерации (page_size, backprob, seed, min_step_nodes)
+ * Гиперпараметры генерации (page_size, backprob, seed, min_step_nodes, max_step_nodes)
  * в файл намеренно не пишутся. */
 typedef struct {{
     char     magic[8];             /* "GCACHEG1"                      */
@@ -364,31 +404,43 @@ def build_graph(args):
     record_size = layout["record_size"]
     node_count = layout["node_count"]
     min_step_nodes = layout["min_step_nodes"]
+    max_step_nodes = layout["max_step_nodes"]
 
     rng = SplitMix64(args.seed)
     children = [[] for _ in range(node_count)]
-    stats = {"forward": 0, "backward": 0, "short_step": 0}
+    stats = {
+        "forward": 0,
+        "backward": 0,
+        "in_range": 0,
+        "out_of_range": 0,
+    }
 
     def pick_neighbour(pool, cur, want_backward):
         """Ищет в `pool` (объект Fenwick с "доступными" id) идеальный по
         направлению и дистанции id, при необходимости смягчая требования.
         Возвращает (id, дистанция_соблюдена)."""
+
+  
         if want_backward:
-            near_lo, near_hi = 0, cur - min_step_nodes
+            near_lo, near_hi = max(0, cur - max_step_nodes), cur - min_step_nodes
             far_lo, far_hi = 0, cur - 1
         else:
-            near_lo, near_hi = cur + min_step_nodes, node_count - 1
+            near_lo, near_hi = cur + min_step_nodes, min(node_count - 1, cur + max_step_nodes)
             far_lo, far_hi = cur + 1, node_count - 1
+
 
         picked = pool.random_in_range(near_lo, near_hi, rng)
         if picked is not None:
             return picked, True
+        
         picked = pool.random_in_range(far_lo, far_hi, rng)
         if picked is not None:
             return picked, False
+        
         picked = pool.random_in_range(0, node_count - 1, rng)
         return picked, False
 
+    
     if args.fanout == 1:
         # ВАЖНЫЙ ЧАСТНЫЙ СЛУЧАЙ: при fan_out=1 суммарная "ёмкость" родителей
         # (по одному слоту на узел) равна числу узлов, а нужно ровно N-1
@@ -419,7 +471,10 @@ def build_graph(args):
             else:
                 stats["backward"] += 1
             if not dist_ok:
-                stats["short_step"] += 1
+                stats["out_of_range"] += 1
+            else:
+                stats["in_range"] += 1
+            
             cur = nxt
             topo_order.append(nxt)
         root = start
@@ -456,7 +511,9 @@ def build_graph(args):
             else:
                 stats["backward"] += 1
             if not dist_ok:
-                stats["short_step"] += 1
+                stats["out_of_range"] += 1
+            else:
+                stats["in_range"] += 1
 
             capacity.update(v, args.fanout)  # v рождается и сам становится доступным родителем
 
@@ -476,6 +533,7 @@ def build_graph(args):
         "record_size": record_size,
         "root": root,
         "min_step_nodes": min_step_nodes,
+        "max_step_nodes": max_step_nodes,
         "children": children,
         "values": values,
         "stats": stats,
@@ -587,6 +645,11 @@ def main():
              "(гарантия кэш-промаха)",
     )
     ap.add_argument(
+        "--max-step-pages", type=float, default=None,
+        help="макс. число страниц, которое может пересечь 'случайный' переход " 
+             "(для сохранения локальности)",
+    )
+    ap.add_argument(
         "--topology", choices=["chain", "graph"], default=None,
         help="удобный пресет: chain принудительно задаёт fanout=1 (простой связный "
              "список / Hamiltonian path со случайным порядком узлов); "
@@ -603,7 +666,7 @@ def main():
     ap.add_argument(
         "--describe-only", action="store_true",
         help="не генерировать файл: только рассчитать раскладку (node_count, "
-             "record_size, min_step_nodes) для заданных параметров и вывести "
+             "record_size, min_step_nodes, max_step_nodes) для заданных параметров"
              "C-описание структуры (заголовок + запись вершины)",
     )
     ap.add_argument(
@@ -649,6 +712,7 @@ def main():
     print(f"  fan_out:             {args.fanout}")
     print(f"  page_size:           {args.page_size}")
     print(f"  min_step_nodes:      {g['min_step_nodes']} (~{g['min_step_nodes']*g['record_size']} байт)")
+    print(f"  max_step_nodes:      "f"{g['max_step_nodes']} (~{g['max_step_nodes']*g['record_size']} байт)")
     print(f"  root_index:          {g['root']}  (offset={HEADER_SIZE + g['root']*g['record_size']})")
     print(f"  рёбер всего:         {total_edges}")
     if total_edges:
@@ -656,7 +720,15 @@ def main():
             f"  доля вперёд/назад:   {g['stats']['forward']/total_edges:.3f} / "
             f"{g['stats']['backward']/total_edges:.3f} (запрошено backprob={args.backprob})"
         )
-        print(f"  доля 'коротких' переходов (< min_step_nodes): {g['stats']['short_step']/total_edges:.3f}")
+
+        print(
+            f"  доля в диапазоне:    "
+            f"{g['stats']['in_range'] / total_edges:.3f}"
+        )
+        print(
+            f"  доля вне диапазона:  "
+            f"{g['stats']['out_of_range'] / total_edges:.3f}"
+        )
 
     if args.verify:
         v = verify_graph(g)
@@ -674,6 +746,7 @@ def main():
         "record_size": g["record_size"],
         "node_count": g["node_count"],
         "min_step_nodes": g["min_step_nodes"],
+        "max_step_nodes": g["max_step_nodes"]
     }
     c_code = render_c_struct(args, layout)
     print()
