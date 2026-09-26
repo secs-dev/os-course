@@ -54,8 +54,9 @@ N записей вершин ФИКСИРОВАННОГО размера, ид�
    При fan_out=1 эта же схема гарантированно вырождается ровно в связный
    список (Hamiltonian path) со случайным порядком вершин — при out-degree
    <= 1 дерево физически не может ветвиться, значит "родословная" — это
-   единственная простая цепочка. Т.е. линейный граф из ТЗ является
-   частным случаем общей модели графов.
+   единственная простая цепочка. Отдельный preset `--topology sequential`
+   строит путь 0 -> 1 -> ... -> N-1 и тем самым задаёт физически
+   последовательный шаблон доступа.
 
 2. Управление паттерном ввода-вывода (--backprob).
    Родитель для очередной "рождающейся" вершины выбирается СРЕДИ ВСЕХ уже
@@ -389,7 +390,16 @@ def build_graph(args):
         picked = pool.random_in_range(0, node_count - 1, rng)
         return picked, False
 
-    if args.fanout == 1:
+    if args.topology == "sequential":
+        # Physical file order and traversal order coincide exactly. This is
+        # deliberately separate from "chain", which is a randomly laid-out
+        # Hamiltonian path and therefore produces non-sequential I/O.
+        topo_order = list(range(node_count))
+        for cur in range(node_count - 1):
+            children[cur].append(cur + 1)
+        stats["forward"] = node_count - 1
+        root = 0
+    elif args.fanout == 1:
         # ВАЖНЫЙ ЧАСТНЫЙ СЛУЧАЙ: при fan_out=1 суммарная "ёмкость" родителей
         # (по одному слоту на узел) равна числу узлов, а нужно ровно N-1
         # рёбер — свободного "запаса" почти нет. Если строить граф как DAG
@@ -587,10 +597,10 @@ def main():
              "(гарантия кэш-промаха)",
     )
     ap.add_argument(
-        "--topology", choices=["chain", "graph"], default=None,
-        help="удобный пресет: chain принудительно задаёт fanout=1 (простой связный "
-             "список / Hamiltonian path со случайным порядком узлов); "
-             "graph использует заданный --fanout как есть",
+        "--topology", choices=["sequential", "chain", "graph"], default=None,
+        help="удобный пресет: sequential создаёт путь 0->1->...->N-1; "
+             "chain принудительно задаёт fanout=1 (Hamiltonian path со случайным "
+             "порядком узлов); graph использует заданный --fanout как есть",
     )
     ap.add_argument("--min-nodes", type=int, default=64, help="минимально допустимое число вершин")
     ap.add_argument(
@@ -613,9 +623,9 @@ def main():
 
     args = ap.parse_args()
 
-    if args.topology == "chain":
+    if args.topology in ("sequential", "chain"):
         if args.fanout != 1:
-            print("[инфо] --topology chain: принудительно fanout=1", file=sys.stderr)
+            print(f"[инфо] --topology {args.topology}: принудительно fanout=1", file=sys.stderr)
         args.fanout = 1
 
     if args.fanout < 1:
