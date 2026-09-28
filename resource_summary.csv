@@ -1,0 +1,5 @@
+method,page_faults_mean,page_faults_std,vol_ctx_mean,vol_ctx_std,invol_ctx_mean,invol_ctx_std
+mmap_read,1.0,0.0,0.1,0.31622776601683794,4.0,0.0
+mmap_write,1.0,0.0,0.0,0.0,4.8,1.2292725943057186
+read,1.0,0.0,0.1,0.31622776601683794,5.3,1.5670212364724212
+write,1.0,0.0,0.0,0.0,70.9,14.685215543380886
