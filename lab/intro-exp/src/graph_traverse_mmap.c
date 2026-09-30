@@ -85,12 +85,12 @@ static void prepare_mapping(const MappedFile *file)
 {
     /* --no-cache is advisory here: mmap still uses the page cache, unlike
      * Linux O_DIRECT. Neither hint guarantees a cold cache or clears the
-     * system-wide/drive cache. MADV_SEQUENTIAL affects readahead even for a
-     * randomly linked chain, so this is not just a change in cache retention. */
+     * system-wide/drive cache. MADV_RANDOM hints the operating system to
+     * change the readahead policy for non-continuous data access. */
     if (no_cache_mode) {
 #if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
-        if (madvise(file->data, file->size, MADV_SEQUENTIAL) != 0)
-            perror("madvise(MADV_SEQUENTIAL)");
+        if (madvise(file->data, file->size, MADV_RANDOM) != 0)
+            perror("madvise(MADV_RANDOM)");
 #endif
     }
 
