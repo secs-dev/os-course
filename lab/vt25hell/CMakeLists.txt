@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.12)
 project(
     vtsh
     VERSION 0.1
-    DESCRIPTION "VT Shell"
+    DESCRIPTION "Good Old VT Shell"
     LANGUAGES C
 )
 
