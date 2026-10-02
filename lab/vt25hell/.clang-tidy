@@ -1,0 +1,17 @@
+Checks: |
+    -*,
+    bugprone-*,
+    cert-*,
+    clang-analyzer-*,
+    concurrency-*,
+    cppcoreguidelines-*,
+    google-*,
+    hicpp-*,
+    misc-*,
+    modernize-*,
+    performance-*,
+    portability-*,
+    -portability-avoid-pragma-once,
+    readability-*
+WarningsAsErrors: '*'
+FormatStyle: file

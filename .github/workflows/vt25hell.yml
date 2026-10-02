@@ -1,4 +1,4 @@
-name: Test VT Shell
+name: Test VT25hell
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
   pull_request:
     paths:
-      - 'lab/vtsh/**'
+      - 'lab/vt25hell/**'
 
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
       image: silkeh/clang:latest
     defaults:
       run:
-        working-directory: ./lab/vtsh
+        working-directory: ./lab/vt25hell
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,5 +45,5 @@ jobs:
             clang-tidy -p ./build {} \;
 
       - name: Test
-        working-directory: ./lab/vtsh/test
+        working-directory: ./lab/vt25hell/test
         run: python3 -m unittest discover

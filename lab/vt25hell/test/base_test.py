@@ -1,17 +1,13 @@
 import os
-from pathlib import Path
 from typing import Optional
 from unittest import TestCase
 
 from shell import Shell
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-VTSH_EXECUTABLE = PROJECT_ROOT / "build" / "bin" / "vtsh"
-
 
 class BaseShellTest(TestCase):
     def setUp(self):
-        self.shell = Shell(str(VTSH_EXECUTABLE))
+        self.shell = Shell("../build/bin/vtsh")
         self.test_files = set()
 
     def tearDown(self):

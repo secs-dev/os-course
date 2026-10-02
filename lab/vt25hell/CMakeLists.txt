@@ -3,10 +3,11 @@ cmake_minimum_required(VERSION 3.12)
 project(
     vtsh
     VERSION 0.1
-    DESCRIPTION "VT Shell"
+    DESCRIPTION "Good Old VT Shell"
     LANGUAGES C
 )
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_subdirectory(src)
+add_subdirectory(bin)
+add_subdirectory(lib)
