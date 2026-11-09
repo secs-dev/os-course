@@ -102,8 +102,8 @@ stress-ng --cpu 2 --io 1 --vm 1 --vm-bytes 256M --timeout 30s
 
 | Метрика | Основной источник | Альтернатива/уточнение |
 |---|---|---|
-| Wall time | `/usr/bin/time -v` | `perf stat` (task-clock), встроенный таймер программы, шелловский `time` |
-| User/Kernel time | `/usr/bin/time -v` | `perf stat -e task-clock`, `/proc/[pid]/stat` |
+| Wall time | `/usr/bin/time -v` | `perf stat` (строка `seconds time elapsed`), встроенный таймер программы, шелловский `time` |
+| User/Kernel time | `/usr/bin/time -v` | `/proc/[pid]/stat` (поля `utime` и `stime`) |
 | %CPU в моменте | `pidstat -u 1`, `top` | `mpstat -P ALL 1` |
 | Context switches | `/usr/bin/time -v` | `perf stat -e context-switches` |
 | CPU migrations | `perf stat -e cpu-migrations` | — |
