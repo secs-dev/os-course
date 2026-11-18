@@ -40,6 +40,7 @@ graph TD
         vtsh["<a href='https://github.com/secs-dev/os-course/blob/main/lab/vtsh/README.md' style='color:black;'>Shell</a>"]
         corosched["<a href='https://github.com/secs-dev/os-course/blob/main/lab/corosched/README.md' style='color:black;'>CoroSched</a>"]
         corohttp["<a href='https://github.com/secs-dev/os-course/blob/main/lab/corohttp/README.md' style='color:black;'>CoroHTTP</a>"]
+        coromutex["<a href='https://github.com/secs-dev/os-course/blob/main/lab/coromutex/README.md' style='color:black;'>CoroMutex</a>"]
     end
 
     subgraph linux ["Linux"]
@@ -58,6 +59,7 @@ graph TD
     vtsh --> corosched
     vtpc --> corohttp
     corosched --> corohttp
+    corohttp --> coromutex
     vtsh --> bpf_xdp
 
     classDef free fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#37474f
@@ -74,5 +76,6 @@ graph TD
     class fuse medium
     class corosched medium
     class corohttp medium
+    class coromutex hard
     class bpf_xdp medium
 ```
