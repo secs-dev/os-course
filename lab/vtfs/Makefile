@@ -1,12 +1,13 @@
-obj-m += source/vtfs.o 
+ifneq ($(KERNELRELEASE),)
+obj-m := vtfs.o
+vtfs-y := source/vtfs.o source/http.o
+else
+KDIR ?= /lib/modules/$(shell uname -r)/build
 
-PWD := $(CURDIR) 
-KDIR = /lib/modules/`uname -r`/build
-EXTRA_CFLAGS = -Wall -g
-
+.PHONY: all clean
 all:
-	make -C $(KDIR) M=$(PWD) modules 
+	$(MAKE) -C $(KDIR) M=$(CURDIR) modules
 
 clean:
-	make -C $(KDIR) M=$(PWD) clean
-	rm -rf .cache
+	$(MAKE) -C $(KDIR) M=$(CURDIR) clean
+endif
